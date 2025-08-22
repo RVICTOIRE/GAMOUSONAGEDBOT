@@ -6,11 +6,15 @@ from datetime import datetime
 from contextlib import contextmanager
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
+from dotenv import load_dotenv
+
+# Charger les variables d'environnement
+load_dotenv('config.env')
 
 # ==== CONSTANTES ====
 DB_FILE = "signalements.db"
-BOT_TOKEN = "8349937883:AAEvRpfuNoqsnMd-Pu9Rb26Lrw684AzBKc8"  # Remplace par ton token BotFather
-GROUP_CHAT_ID = -4818785764  # Remplacez par l'ID du groupe (ex: -1001234567890)
+BOT_TOKEN = os.getenv('BOT_TOKEN')
+GROUP_CHAT_ID = int(os.getenv('GROUP_CHAT_ID', 0)) if os.getenv('GROUP_CHAT_ID') else None
 
 # États de la conversation
 CHOIX, TEXTE, LOCALISATION = range(3)

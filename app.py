@@ -8,6 +8,10 @@ from flask import Flask, request, jsonify, send_from_directory, redirect, url_fo
 from flask_cors import CORS
 import sqlite3
 from contextlib import contextmanager
+from dotenv import load_dotenv
+
+# Charger les variables d'environnement
+load_dotenv('config.env')
 
 
 # ==== CONSTANTES ====
