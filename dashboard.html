@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tableau de bord - Signalements</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; background: #f7fafc; color: #1a202c; }
+        header { padding: 16px 24px; background: #2b6cb0; color: #fff; }
+        header h1 { margin: 0; font-size: 20px; }
+        .container { padding: 24px; max-width: 1200px; margin: 0 auto; }
+        .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .card { background: #fff; border-radius: 10px; padding: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
+        .metric { font-size: 28px; font-weight: 700; }
+        .label { color: #4a5568; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+        table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; }
+        th, td { padding: 10px 12px; border-bottom: 1px solid #e2e8f0; font-size: 14px; }
+        th { text-align: left; background: #f1f5f9; color: #334155; }
+        tr:hover td { background: #f8fafc; }
+        .chip { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+        .chip-green { background: #e6fffa; color: #047857; }
+        .chip-red { background: #fee2e2; color: #b91c1c; }
+        .chip-blue { background: #e0f2fe; color: #0369a1; }
+        .toolbar { margin-bottom: 16px; display: flex; gap: 8px; align-items: center; }
+        .toolbar a { text-decoration: none; color: #2b6cb0; font-weight: 600; }
+        .muted { color: #64748b; font-size: 12px; }
+    </style>
+    </head>
+<body>
+    <header>
+        <h1>Tableau de bord — Signalements SONAGED</h1>
+    </header>
+    <div class="container">
+        <div class="toolbar">
+            <a href="/carte">Voir la carte</a>
+            <span class="muted">|</span>
+            <a href="/form">Envoyer un signalement</a>
+        </div>
+
+        <div class="cards">
+            <div class="card">
+                <div class="label">Total signalements</div>
+                <div class="metric" id="total">—</div>
+            </div>
+            <div class="card">
+                <div class="label">🗑 Bac plein</div>
+                <div class="metric" id="count-bac">—</div>
+            </div>
+            <div class="card">
+                <div class="label">📍 Dépôt</div>
+                <div class="metric" id="count-depot">—</div>
+            </div>
+            <div class="card">
+                <div class="label">Autres</div>
+                <div class="metric" id="count-autre">—</div>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <canvas id="chartByDay" height="140"></canvas>
+            </div>
+            <div class="card">
+                <canvas id="chartByType" height="140"></canvas>
+            </div>
+        </div>
+
+        <h3 style="margin-top:24px; margin-bottom:8px;">Derniers signalements</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Date/Heure</th>
+                    <th>Utilisateur</th>
+                    <th>Type</th>
+                    <th>Message</th>
+                    <th>Lat</th>
+                    <th>Lon</th>
+                </tr>
+            </thead>
+            <tbody id="latest-body"></tbody>
+        </table>
+    </div>
+
+    <script>
+        function typeToChip(type) {
+            if (type === "🗑 Bac plein") return '<span class="chip chip-red">🗑 Bac plein</span>';
+            if (type === "📍 Dépôt") return '<span class="chip chip-green">📍 Dépôt</span>';
+            return '<span class="chip chip-blue">' + (type || 'Autre') + '</span>';
+        }
+
+        fetch('/api/stats')
+            .then(r => r.json())
+            .then(stats => {
+                // Cards
+                document.getElementById('total').textContent = stats.total;
+                document.getElementById('count-bac').textContent = stats.by_type['🗑 Bac plein'] || 0;
+                document.getElementById('count-depot').textContent = stats.by_type['📍 Dépôt'] || 0;
+                const autresCount = Object.entries(stats.by_type).reduce((acc, [k, v]) => {
+                    if (k !== '🗑 Bac plein' && k !== '📍 Dépôt') return acc + v; return acc;
+                }, 0);
+                document.getElementById('count-autre').textContent = autresCount;
+
+                // Table latest
+                const tbody = document.getElementById('latest-body');
+                tbody.innerHTML = '';
+                stats.latest.forEach(item => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td>${item['Date/Heure'] || ''}</td>
+                        <td>${item['Utilisateur'] || ''}</td>
+                        <td>${typeToChip(item['Type'])}</td>
+                        <td>${item['Message'] || ''}</td>
+                        <td>${item['Latitude'] ?? ''}</td>
+                        <td>${item['Longitude'] ?? ''}</td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+
+                // Charts
+                const dayLabels = Object.keys(stats.by_day);
+                const dayValues = Object.values(stats.by_day);
+                new Chart(document.getElementById('chartByDay'), {
+                    type: 'line',
+                    data: {
+                        labels: dayLabels,
+                        datasets: [{
+                            label: 'Signalements / jour',
+                            data: dayValues,
+                            borderColor: '#2b6cb0',
+                            backgroundColor: 'rgba(43,108,176,0.15)',
+                            fill: true,
+                            tension: 0.2
+                        }]
+                    },
+                    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+                });
+
+                const typeLabels = Object.keys(stats.by_type);
+                const typeValues = Object.values(stats.by_type);
+                new Chart(document.getElementById('chartByType'), {
+                    type: 'bar',
+                    data: {
+                        labels: typeLabels,
+                        datasets: [{
+                            label: 'Par type',
+                            data: typeValues,
+                            backgroundColor: ['#f87171', '#34d399', '#60a5fa', '#fbbf24', '#a78bfa']
+                        }]
+                    },
+                    options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+                });
+            })
+            .catch(err => {
+                console.error('Erreur de chargement des stats:', err);
+            });
+    </script>
+</body>
+</html>
+
