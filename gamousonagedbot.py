@@ -17,7 +17,7 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 GROUP_CHAT_ID = int(os.getenv('GROUP_CHAT_ID', 0)) if os.getenv('GROUP_CHAT_ID') else None
 
 # États de la conversation
-CHOIX, TEXTE, PHOTO, LOCALISATION = range(4)
+CHOIX, TEXTE, LOCALISATION = range(3)
 
 # ==== Connexion base de données ====
 @contextmanager
@@ -89,50 +89,21 @@ async def texte_signalement(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texte = update.message.text
     context.user_data["texte"] = texte
 
-    # Demande photo (optionnelle)
-    menu_photo = [["📸 Prendre une photo", "⏭️ Passer cette étape"]]
-    reply_markup = ReplyKeyboardMarkup(menu_photo, resize_keyboard=True, one_time_keyboard=True)
-    await update.message.reply_text("Voulez-vous ajouter une photo au signalement ?", reply_markup=reply_markup)
-    return PHOTO
-
-# ==== Gestion de la photo ====
-async def gestion_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    choix = update.message.text
-    
-    if choix == "📸 Prendre une photo":
-        # Demande de prendre une photo
-        await update.message.reply_text("Veuillez prendre une photo du problème et l'envoyer :")
-        return PHOTO
-    
-    elif choix == "⏭️ Passer cette étape":
-        # Pas de photo, on passe à la localisation
-        context.user_data["photo_id"] = None
-        bouton_loc = KeyboardButton("📍 Envoyer ma localisation", request_location=True)
-        reply_markup = ReplyKeyboardMarkup([[bouton_loc]], resize_keyboard=True, one_time_keyboard=True)
-        await update.message.reply_text("Veuillez envoyer votre localisation :", reply_markup=reply_markup)
-        return LOCALISATION
-    
-    elif update.message.photo:
-        # Photo reçue
-        photo = update.message.photo[-1]  # La plus grande taille
-        context.user_data["photo_id"] = photo.file_id
-        
-        bouton_loc = KeyboardButton("📍 Envoyer ma localisation", request_location=True)
-        reply_markup = ReplyKeyboardMarkup([[bouton_loc]], resize_keyboard=True, one_time_keyboard=True)
-        await update.message.reply_text("✅ Photo reçue ! Maintenant, veuillez envoyer votre localisation :", reply_markup=reply_markup)
-        return LOCALISATION
-    
-    else:
-        await update.message.reply_text("Veuillez choisir une option ou envoyer une photo.")
-        return PHOTO
+    # Demande localisation
+    bouton_loc = KeyboardButton("📍 Envoyer ma localisation", request_location=True)
+    reply_markup = ReplyKeyboardMarkup([[bouton_loc]], resize_keyboard=True, one_time_keyboard=True)
+    await update.message.reply_text("Merci ! Veuillez envoyer votre localisation :", reply_markup=reply_markup)
+    return LOCALISATION
 
 # ==== Localisation du signalement ====
 async def localisation_signalement(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user.full_name
     texte = context.user_data.get("texte", "")
     type_signalement = context.user_data.get("type_signalement", "Autres")
-    photo_id = context.user_data.get("photo_id")
     location = update.message.location
+    
+    # Vérifier s'il y a une photo dans le contexte (optionnel)
+    photo_id = context.user_data.get("photo_id")
 
     # Enregistre dans DB
     ensure_db_exists()
@@ -205,6 +176,15 @@ Pour configurer les notifications, définissez la variable d'environnement GROUP
     
     await update.message.reply_text(message)
 
+# ==== Gestion des photos (commande séparée) ====
+async def add_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Commande pour ajouter une photo au signalement en cours"""
+    if update.message.photo:
+        photo = update.message.photo[-1]  # La plus grande taille
+        context.user_data["photo_id"] = photo.file_id
+        await update.message.reply_text("✅ Photo ajoutée au signalement !")
+    else:
+        await update.message.reply_text("❌ Veuillez envoyer une photo.")
 
 def build_application():
     """Construit et retourne l'application Telegram (python-telegram-bot Application)."""
@@ -218,7 +198,6 @@ def build_application():
         states={
             CHOIX: [MessageHandler(filters.TEXT & ~filters.COMMAND, choix_type)],
             TEXTE: [MessageHandler(filters.TEXT & ~filters.COMMAND, texte_signalement)],
-            PHOTO: [MessageHandler(filters.TEXT | filters.PHOTO, gestion_photo)],
             LOCALISATION: [MessageHandler(filters.LOCATION, localisation_signalement)]
         },
         fallbacks=[],
@@ -226,6 +205,7 @@ def build_application():
 
     application.add_handler(conv_handler)
     application.add_handler(CommandHandler("groupinfo", get_group_info))
+    application.add_handler(CommandHandler("photo", add_photo))
 
     return application
 
