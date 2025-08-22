@@ -15,9 +15,14 @@ if not os.getenv('BOT_TOKEN'):
     print("❌ Erreur: BOT_TOKEN non configuré dans les variables d'environnement")
     sys.exit(1)
 
-# Importer et lancer le bot
-from gamousonagedbot import app
+# Importer la factory et lancer le bot
+from gamousonagedbot import build_application, GROUP_CHAT_ID
 
 if __name__ == "__main__":
     print("🤖 Démarrage du bot Telegram SONAGED...")
-    app.run_polling() 
+    if GROUP_CHAT_ID:
+        print(f"📢 Notifications activées pour le groupe: {GROUP_CHAT_ID}")
+    else:
+        print("⚠️ Notifications groupe désactivées (GROUP_CHAT_ID = None)")
+    application = build_application()
+    application.run_polling() 

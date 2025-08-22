@@ -83,20 +83,21 @@ def read_signalements_from_db() -> List[Dict[str, Any]]:
         ]
 
 
-def append_signalement_to_db(utilisateur: str, type_signalement: str, message: str, latitude: float, longitude: float) -> Dict[str, Any]:
+def append_signalement_to_db(utilisateur: str, type_signalement: str, message: str, latitude: float, longitude: float, photo_id: str = None) -> Dict[str, Any]:
     ensure_db_exists()
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with get_db_connection() as conn:
         conn.execute("""
-            INSERT INTO signalements (date_heure, utilisateur, type, message, latitude, longitude)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (now_str, utilisateur, type_signalement, message, latitude, longitude))
+            INSERT INTO signalements (date_heure, utilisateur, type, message, photo_id, latitude, longitude)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, (now_str, utilisateur, type_signalement, message, photo_id, latitude, longitude))
         conn.commit()
     return {
         "Date/Heure": now_str,
         "Utilisateur": utilisateur,
         "Type": type_signalement,
         "Message": message,
+        "Photo": photo_id,
         "Latitude": latitude,
         "Longitude": longitude,
     }
@@ -169,6 +170,7 @@ def api_create_signalement() -> Response:
     utilisateur = payload.get("Utilisateur")
     type_signalement = payload.get("Type")
     message = payload.get("Message")
+    photo_id = payload.get("Photo")  # Nouveau champ pour la photo
     latitude_raw = payload.get("Latitude")
     longitude_raw = payload.get("Longitude")
 
@@ -205,6 +207,7 @@ def api_create_signalement() -> Response:
         message=message,
         latitude=latitude,
         longitude=longitude,
+        photo_id=photo_id,
     )
 
     # Met à jour le snapshot JSON pour compatibilité avec la carte statique

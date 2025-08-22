@@ -17,7 +17,7 @@ BOT_TOKEN = os.getenv('BOT_TOKEN')
 GROUP_CHAT_ID = int(os.getenv('GROUP_CHAT_ID', 0)) if os.getenv('GROUP_CHAT_ID') else None
 
 # États de la conversation
-CHOIX, TEXTE, LOCALISATION = range(3)
+CHOIX, TEXTE, PHOTO, LOCALISATION = range(4)
 
 # ==== Connexion base de données ====
 @contextmanager
@@ -39,6 +39,7 @@ def ensure_db_exists():
                 utilisateur TEXT NOT NULL,
                 type TEXT NOT NULL,
                 message TEXT NOT NULL,
+                photo_id TEXT,
                 latitude REAL,
                 longitude REAL
             )
@@ -51,7 +52,7 @@ def mise_a_jour_json():
     df = []
     with get_db_connection() as conn:
         cursor = conn.execute("""
-            SELECT date_heure, utilisateur, type, message, latitude, longitude
+            SELECT date_heure, utilisateur, type, message, photo_id, latitude, longitude
             FROM signalements
             ORDER BY date_heure DESC
         """)
@@ -61,6 +62,7 @@ def mise_a_jour_json():
                 "Utilisateur": row["utilisateur"],
                 "Type": row["type"],
                 "Message": row["message"],
+                "Photo": row["photo_id"] if row["photo_id"] else None,
                 "Latitude": row["latitude"],
                 "Longitude": row["longitude"]
             })
@@ -87,30 +89,65 @@ async def texte_signalement(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texte = update.message.text
     context.user_data["texte"] = texte
 
-    # Demande localisation
-    bouton_loc = KeyboardButton("📍 Envoyer ma localisation", request_location=True)
-    reply_markup = ReplyKeyboardMarkup([[bouton_loc]], resize_keyboard=True, one_time_keyboard=True)
-    await update.message.reply_text("Merci ! Veuillez envoyer votre localisation :", reply_markup=reply_markup)
-    return LOCALISATION
+    # Demande photo (optionnelle)
+    menu_photo = [["📸 Prendre une photo", "⏭️ Passer cette étape"]]
+    reply_markup = ReplyKeyboardMarkup(menu_photo, resize_keyboard=True, one_time_keyboard=True)
+    await update.message.reply_text("Voulez-vous ajouter une photo au signalement ?", reply_markup=reply_markup)
+    return PHOTO
+
+# ==== Gestion de la photo ====
+async def gestion_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    choix = update.message.text
+    
+    if choix == "📸 Prendre une photo":
+        # Demande de prendre une photo
+        bouton_photo = KeyboardButton("📷 Prendre une photo", request_contact=False)
+        reply_markup = ReplyKeyboardMarkup([[bouton_photo]], resize_keyboard=True, one_time_keyboard=True)
+        await update.message.reply_text("Veuillez prendre une photo du problème :", reply_markup=reply_markup)
+        return PHOTO
+    
+    elif choix == "⏭️ Passer cette étape":
+        # Pas de photo, on passe à la localisation
+        context.user_data["photo_id"] = None
+        bouton_loc = KeyboardButton("📍 Envoyer ma localisation", request_location=True)
+        reply_markup = ReplyKeyboardMarkup([[bouton_loc]], resize_keyboard=True, one_time_keyboard=True)
+        await update.message.reply_text("Veuillez envoyer votre localisation :", reply_markup=reply_markup)
+        return LOCALISATION
+    
+    elif update.message.photo:
+        # Photo reçue
+        photo = update.message.photo[-1]  # La plus grande taille
+        context.user_data["photo_id"] = photo.file_id
+        
+        bouton_loc = KeyboardButton("📍 Envoyer ma localisation", request_location=True)
+        reply_markup = ReplyKeyboardMarkup([[bouton_loc]], resize_keyboard=True, one_time_keyboard=True)
+        await update.message.reply_text("✅ Photo reçue ! Maintenant, veuillez envoyer votre localisation :", reply_markup=reply_markup)
+        return LOCALISATION
+    
+    else:
+        await update.message.reply_text("Veuillez choisir une option ou envoyer une photo.")
+        return PHOTO
 
 # ==== Localisation du signalement ====
 async def localisation_signalement(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user.full_name
     texte = context.user_data.get("texte", "")
     type_signalement = context.user_data.get("type_signalement", "Autres")
+    photo_id = context.user_data.get("photo_id")
     location = update.message.location
 
     # Enregistre dans DB
     ensure_db_exists()
     with get_db_connection() as conn:
         conn.execute("""
-            INSERT INTO signalements (date_heure, utilisateur, type, message, latitude, longitude)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO signalements (date_heure, utilisateur, type, message, photo_id, latitude, longitude)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             user,
             type_signalement,
             texte,
+            photo_id,
             location.latitude,
             location.longitude
         ))
@@ -130,13 +167,22 @@ async def localisation_signalement(update: Update, context: ContextTypes.DEFAULT
 🌍 Localisation: {location.latitude}, {location.longitude}
 🕐 Date: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
-Voir sur la carte: http://127.0.0.1:5000/carte"""
+Voir sur la carte: https://gamousonagedbot-production.up.railway.app/carte"""
             
-            await context.bot.send_message(
-                chat_id=GROUP_CHAT_ID,
-                text=notification,
-                disable_web_page_preview=True
-            )
+            if photo_id:
+                # Envoyer la photo avec la notification
+                await context.bot.send_photo(
+                    chat_id=GROUP_CHAT_ID,
+                    photo=photo_id,
+                    caption=notification
+                )
+            else:
+                # Envoyer seulement le texte
+                await context.bot.send_message(
+                    chat_id=GROUP_CHAT_ID,
+                    text=notification,
+                    disable_web_page_preview=True
+                )
         except Exception as e:
             print(f"Erreur notification groupe: {e}")
 
@@ -157,27 +203,37 @@ async def get_group_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
 📝 Nom: {chat_title}
 🆔 Chat ID: {chat_id}
 
-Pour configurer les notifications, remplacez GROUP_CHAT_ID = None par GROUP_CHAT_ID = {chat_id} dans le code."""
+Pour configurer les notifications, définissez la variable d'environnement GROUP_CHAT_ID={chat_id}."""
     
     await update.message.reply_text(message)
 
-# ==== MAIN ====
-if __name__ == "__main__":
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+def build_application():
+    """Construit et retourne l'application Telegram (python-telegram-bot Application)."""
+    if not BOT_TOKEN:
+        raise RuntimeError("BOT_TOKEN non défini dans les variables d'environnement")
+
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
             CHOIX: [MessageHandler(filters.TEXT & ~filters.COMMAND, choix_type)],
             TEXTE: [MessageHandler(filters.TEXT & ~filters.COMMAND, texte_signalement)],
+            PHOTO: [MessageHandler(filters.TEXT | filters.PHOTO, gestion_photo)],
             LOCALISATION: [MessageHandler(filters.LOCATION, localisation_signalement)]
         },
         fallbacks=[],
     )
 
-    app.add_handler(conv_handler)
-    app.add_handler(CommandHandler("groupinfo", get_group_info))
-    
+    application.add_handler(conv_handler)
+    application.add_handler(CommandHandler("groupinfo", get_group_info))
+
+    return application
+
+# ==== MAIN ====
+if __name__ == "__main__":
+    app = build_application()
     print("🚀 Bot SONAGED actif…")
     if GROUP_CHAT_ID:
         print(f"📢 Notifications activées pour le groupe: {GROUP_CHAT_ID}")
