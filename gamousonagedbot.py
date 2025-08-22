@@ -101,9 +101,7 @@ async def gestion_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if choix == "📸 Prendre une photo":
         # Demande de prendre une photo
-        bouton_photo = KeyboardButton("📷 Prendre une photo", request_contact=False)
-        reply_markup = ReplyKeyboardMarkup([[bouton_photo]], resize_keyboard=True, one_time_keyboard=True)
-        await update.message.reply_text("Veuillez prendre une photo du problème :", reply_markup=reply_markup)
+        await update.message.reply_text("Veuillez prendre une photo du problème et l'envoyer :")
         return PHOTO
     
     elif choix == "⏭️ Passer cette étape":

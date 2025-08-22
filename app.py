@@ -38,6 +38,7 @@ def ensure_db_exists() -> None:
                 utilisateur TEXT NOT NULL,
                 type TEXT NOT NULL,
                 message TEXT NOT NULL,
+                photo_id TEXT,
                 latitude REAL,
                 longitude REAL
             )
@@ -66,7 +67,7 @@ def read_signalements_from_db() -> List[Dict[str, Any]]:
     ensure_db_exists()
     with get_db_connection() as conn:
         cursor = conn.execute("""
-            SELECT date_heure, utilisateur, type, message, latitude, longitude
+            SELECT date_heure, utilisateur, type, message, photo_id, latitude, longitude
             FROM signalements
             ORDER BY date_heure DESC
         """)
@@ -76,6 +77,7 @@ def read_signalements_from_db() -> List[Dict[str, Any]]:
                 "Utilisateur": row["utilisateur"],
                 "Type": clean_type_string(row["type"]),
                 "Message": row["message"],
+                "Photo": row["photo_id"] if row["photo_id"] else None,
                 "Latitude": row["latitude"],
                 "Longitude": row["longitude"],
             }
