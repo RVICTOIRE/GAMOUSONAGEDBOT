@@ -44,7 +44,10 @@ def ensure_db_exists():
                 longitude REAL
             )
         """)
+
         conn.commit()
+
+
 
 # ==== Fonction mise à jour JSON ====
 def mise_a_jour_json():
