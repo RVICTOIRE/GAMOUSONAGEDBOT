@@ -157,7 +157,16 @@ def _ensure_tg_started() -> None:
 
 @app.get("/")
 def index() -> Response:
-    return redirect(url_for("carte"))
+    return (
+        "Signalements SONAGED API is running. Visit /carte or /dashboard.",
+        200,
+        {"Content-Type": "text/plain; charset=utf-8"},
+    )
+
+
+@app.get("/health")
+def health() -> Response:
+    return ("ok", 200, {"Content-Type": "text/plain; charset=utf-8"})
 
 
 @app.get("/carte")
