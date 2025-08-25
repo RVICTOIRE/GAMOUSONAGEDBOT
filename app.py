@@ -120,6 +120,7 @@ CORS(app)
 
 # ==== Initialisation Application Telegram (sans serveur webhook propre) ====
 telegram_app = build_telegram_application()
+_tg_started = False
 
 async def _start_telegram_app() -> None:
     await telegram_app.initialize()
@@ -128,9 +129,13 @@ async def _start_telegram_app() -> None:
 def _run_telegram_app_bg() -> None:
     asyncio.run(_start_telegram_app())
 
-# Lancer l'application Telegram dans un thread de fond
-_tg_thread = threading.Thread(target=_run_telegram_app_bg, daemon=True)
-_tg_thread.start()
+@app.before_first_request
+def _ensure_tg_started() -> None:
+    global _tg_started
+    if _tg_started:
+        return
+    _tg_started = True
+    threading.Thread(target=_run_telegram_app_bg, daemon=True).start()
 
 
 @app.get("/")
