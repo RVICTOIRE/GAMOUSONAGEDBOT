@@ -169,8 +169,17 @@ def index() -> Response:
     )
 
 
-@app.get("/health")
+@app.route("/health", methods=["GET", "HEAD"])
 def health() -> Response:
+    return ("ok", 200, {"Content-Type": "text/plain; charset=utf-8"})
+
+# Alias supplémentaires pour compatibilité plateformes
+@app.route("/hc", methods=["GET", "HEAD"])
+def health_hc() -> Response:
+    return ("ok", 200, {"Content-Type": "text/plain; charset=utf-8"})
+
+@app.route("/_health", methods=["GET", "HEAD"])
+def health_alt() -> Response:
     return ("ok", 200, {"Content-Type": "text/plain; charset=utf-8"})
 
 
