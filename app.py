@@ -124,10 +124,15 @@ app = Flask(__name__)
 CORS(app)
 
 # ==== Initialisation Application Telegram (sans serveur webhook propre) ====
-telegram_app = build_telegram_application()
+# Déférer la création de l'application Telegram pour éviter les erreurs au boot
+telegram_app = None
 _tg_started = False
+_tg_enabled = os.getenv("START_TG_ON_BOOT", "1").lower() not in ("0", "false", "no")
 
 async def _start_telegram_app() -> None:
+    global telegram_app
+    if telegram_app is None:
+        telegram_app = build_telegram_application()
     await telegram_app.initialize()
     await telegram_app.start()
     # Enregistrer le webhook côté Telegram si une URL publique est fournie
@@ -149,7 +154,7 @@ def _run_telegram_app_bg() -> None:
 @app.before_first_request
 def _ensure_tg_started() -> None:
     global _tg_started
-    if _tg_started:
+    if _tg_started or not _tg_enabled:
         return
     _tg_started = True
     threading.Thread(target=_run_telegram_app_bg, daemon=True).start()
