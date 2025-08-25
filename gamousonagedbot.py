@@ -11,11 +11,12 @@ from dotenv import load_dotenv
 
 # Charger les variables d'environnement
 load_dotenv('config.env')
+load_dotenv()  # Charge aussi depuis les variables d'environnement système
 
 # ==== CONSTANTES ====
 # Rendre le chemin DB configurable pour pointer vers un stockage persistant en production
 DB_FILE = os.getenv("DB_FILE", "signalements.db")
-BOT_TOKEN = os.getenv('BOT_TOKEN')
+BOT_TOKEN = os.getenv('BOT_TOKEN') or os.environ.get('BOT_TOKEN')
 GROUP_CHAT_ID = int(os.getenv('GROUP_CHAT_ID', 0)) if os.getenv('GROUP_CHAT_ID') else None
 WEBHOOK_URL = os.getenv('WEBHOOK_URL')  # ex: https://your-domain.tld/bot
 WEBHOOK_PATH = os.getenv('WEBHOOK_PATH', '/webhook')
