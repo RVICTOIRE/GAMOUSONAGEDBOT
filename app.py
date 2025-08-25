@@ -367,5 +367,5 @@ def dashboard() -> Response:
 if __name__ == "__main__":
     ensure_db_exists()
     print("🚀 API Flask SONAGED active sur http://127.0.0.1:5000 …")
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=8080, debug=True)
 
