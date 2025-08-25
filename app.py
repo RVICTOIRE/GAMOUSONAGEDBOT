@@ -127,18 +127,25 @@ TG_WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
 TG_WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 TG_WEBHOOK_PATH = os.getenv("WEBHOOK_PATH", "/webhook")
 
+print(f"🔧 Configuration Telegram: enabled={_tg_enabled}, webhook_url={TG_WEBHOOK_URL}, secret={'***' if TG_WEBHOOK_SECRET else 'None'}")
+
 async def _start_telegram_app() -> None:
     global telegram_app
+    print("🚀 Démarrage de l'application Telegram...")
     if telegram_app is None:
         # Import paresseux pour éviter erreurs d'import au boot
         from gamousonagedbot import build_application as build_telegram_application
+        print("📦 Construction de l'application Telegram...")
         telegram_app = build_telegram_application()
+    print("⚡ Initialisation de l'application Telegram...")
     await telegram_app.initialize()
+    print("▶️ Démarrage de l'application Telegram...")
     await telegram_app.start()
     # Enregistrer le webhook côté Telegram si une URL publique est fournie
     if TG_WEBHOOK_URL:
         full_url = TG_WEBHOOK_URL.rstrip('/') + TG_WEBHOOK_PATH
         try:
+            print(f"🌐 Enregistrement du webhook: {full_url}")
             await telegram_app.bot.set_webhook(
                 url=full_url,
                 secret_token=TG_WEBHOOK_SECRET,
@@ -147,16 +154,28 @@ async def _start_telegram_app() -> None:
             print(f"✅ Webhook Telegram enregistré: {full_url}")
         except Exception as e:
             print(f"⚠️ Impossible d'enregistrer le webhook Telegram: {e}")
+    else:
+        print("⚠️ WEBHOOK_URL non défini, webhook non enregistré")
 
 def _run_telegram_app_bg() -> None:
-    asyncio.run(_start_telegram_app())
+    print("🔄 Lancement du thread Telegram...")
+    try:
+        asyncio.run(_start_telegram_app())
+    except Exception as e:
+        print(f"❌ Erreur lors du démarrage Telegram: {e}")
 
 def _ensure_tg_started() -> None:
     global _tg_started
     if _tg_started or not _tg_enabled:
         return
+    print("🎯 Démarrage du bot Telegram...")
     _tg_started = True
     threading.Thread(target=_run_telegram_app_bg, daemon=True).start()
+
+# Démarrer le bot automatiquement au démarrage de Flask
+if _tg_enabled:
+    print("🚀 Démarrage automatique du bot Telegram...")
+    _ensure_tg_started()
 
 
 @app.get("/")
@@ -366,6 +385,7 @@ def dashboard() -> Response:
 
 if __name__ == "__main__":
     ensure_db_exists()
-    print("🚀 API Flask SONAGED active sur http://127.0.0.1:5000 …")
-    app.run(host="0.0.0.0", port=8080, debug=True)
+    port = int(os.getenv("PORT", "5000"))
+    print(f"🚀 API Flask SONAGED active sur http://127.0.0.1:{port} …")
+    app.run(host="0.0.0.0", port=port, debug=True)
 
