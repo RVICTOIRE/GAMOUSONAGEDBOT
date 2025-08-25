@@ -153,12 +153,19 @@ async def localisation_signalement(update: Update, context: ContextTypes.DEFAULT
 Voir sur la carte: https://gamousonagedbot-production.up.railway.app/carte"""
             
             if photo_id:
-                # Envoyer la photo avec la notification
-                await context.bot.send_photo(
-                    chat_id=GROUP_CHAT_ID,
-                    photo=photo_id,
-                    caption=notification
-                )
+                # Envoyer la photo (ou document image) avec la notification
+                if context.user_data.get("photo_is_document"):
+                    await context.bot.send_document(
+                        chat_id=GROUP_CHAT_ID,
+                        document=photo_id,
+                        caption=notification
+                    )
+                else:
+                    await context.bot.send_photo(
+                        chat_id=GROUP_CHAT_ID,
+                        photo=photo_id,
+                        caption=notification
+                    )
             else:
                 # Envoyer seulement le texte
                 await context.bot.send_message(
@@ -193,10 +200,12 @@ Pour configurer les notifications, définissez la variable d'environnement GROUP
 # ==== Gestion des photos (commande séparée) ====
 async def add_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Commande pour ajouter une photo au signalement en cours"""
-    if update.message.photo:
-        photo = update.message.photo[-1]  # La plus grande taille
+    message = update.message
+    # Cas 1: photo classique
+    if message and message.photo:
+        photo = message.photo[-1]
         context.user_data["photo_id"] = photo.file_id
-        # Après une photo, ne proposer QUE la localisation
+        context.user_data["photo_is_document"] = False
         bouton_loc = KeyboardButton("📍 Envoyer ma localisation", request_location=True)
         reply_markup = ReplyKeyboardMarkup([[bouton_loc]], resize_keyboard=True, one_time_keyboard=True)
         await update.message.reply_text(
@@ -204,8 +213,23 @@ async def add_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=reply_markup,
         )
         return LOCALISATION
-    else:
-        await update.message.reply_text("❌ Veuillez envoyer une photo.")
+    # Cas 2: image envoyée comme document (Photo HD)
+    if message and message.document and (message.document.mime_type or "").startswith("image/"):
+        context.user_data["photo_id"] = message.document.file_id
+        context.user_data["photo_is_document"] = True
+        bouton_loc = KeyboardButton("📍 Envoyer ma localisation", request_location=True)
+        reply_markup = ReplyKeyboardMarkup([[bouton_loc]], resize_keyboard=True, one_time_keyboard=True)
+        await update.message.reply_text(
+            "✅ Photo ajoutée (document) ! Maintenant, envoyez votre localisation.",
+            reply_markup=reply_markup,
+        )
+        return LOCALISATION
+
+    await update.message.reply_text(
+        "❌ Fichier non reconnu comme photo. Envoyez une photo via l'appareil photo ou comme image.",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+    return TEXTE
 
 async def demander_localisation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Invite l'utilisateur à partager sa localisation avec le bouton dédié."""
@@ -249,8 +273,7 @@ def build_application():
                 MessageHandler(filters.TEXT & ~filters.COMMAND, texte_signalement),
             ],
             LOCALISATION: [
-                MessageHandler(filters.TEXT & filters.Regex(r"^📷 Joindre une photo$"), demander_photo),
-                MessageHandler(filters.PHOTO, add_photo),
+                MessageHandler(filters.PHOTO | (filters.Document.IMAGE), add_photo),
                 MessageHandler(filters.LOCATION, localisation_signalement),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, demander_localisation),
             ]
