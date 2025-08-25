@@ -151,7 +151,7 @@ async def _start_telegram_app() -> None:
 def _run_telegram_app_bg() -> None:
     asyncio.run(_start_telegram_app())
 
-@app.before_first_request
+@app.before_serving
 def _ensure_tg_started() -> None:
     global _tg_started
     if _tg_started or not _tg_enabled:
