@@ -1,14 +1,18 @@
 import csv
 import os
 import json
+import asyncio
+import threading
 from datetime import datetime
 from typing import List, Dict, Any
 
 from flask import Flask, request, jsonify, send_from_directory, redirect, url_for, Response
+from telegram import Update
 from flask_cors import CORS
 import sqlite3
 from contextlib import contextmanager
 from dotenv import load_dotenv
+from gamousonagedbot import build_application as build_telegram_application, WEBHOOK_SECRET as TG_WEBHOOK_SECRET
 
 # Charger les variables d'environnement
 load_dotenv('config.env')
@@ -114,6 +118,20 @@ def write_json_snapshot(signalements: List[Dict[str, Any]]) -> None:
 app = Flask(__name__)
 CORS(app)
 
+# ==== Initialisation Application Telegram (sans serveur webhook propre) ====
+telegram_app = build_telegram_application()
+
+async def _start_telegram_app() -> None:
+    await telegram_app.initialize()
+    await telegram_app.start()
+
+def _run_telegram_app_bg() -> None:
+    asyncio.run(_start_telegram_app())
+
+# Lancer l'application Telegram dans un thread de fond
+_tg_thread = threading.Thread(target=_run_telegram_app_bg, daemon=True)
+_tg_thread.start()
+
 
 @app.get("/")
 def index() -> Response:
@@ -143,6 +161,25 @@ def get_signalements_json() -> Response:
         # En cas d'échec d'écriture, on renvoie tout de même la réponse
         pass
     return jsonify(signalements)
+
+
+# ==== Webhook Telegram → Transfert vers l'application PTB ====
+@app.post("/webhook")
+def telegram_webhook() -> Response:
+    # Vérification du secret (si configuré)
+    provided = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
+    if TG_WEBHOOK_SECRET and provided != TG_WEBHOOK_SECRET:
+        return jsonify({"status": "forbidden"}), 403
+
+    payload = request.get_json(silent=True) or {}
+    try:
+        update = Update.de_json(payload, telegram_app.bot)
+        # Enqueue l'update pour traitement par PTB
+        telegram_app.update_queue.put_nowait(update)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+
+    return jsonify({"status": "ok"})
 
 
 @app.get("/debug/signalements")

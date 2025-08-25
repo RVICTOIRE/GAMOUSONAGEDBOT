@@ -290,27 +290,3 @@ def build_application():
     application.add_handler(CommandHandler("photo", add_photo))
 
     return application
-
-# ==== MAIN ====
-if __name__ == "__main__":
-    app = build_application()
-    print("🚀 Bot SONAGED actif…")
-    if GROUP_CHAT_ID:
-        print(f"📢 Notifications activées pour le groupe: {GROUP_CHAT_ID}")
-    else:
-        print("⚠️ Notifications groupe désactivées (GROUP_CHAT_ID = None)")
-
-    # Mode Webhook si WEBHOOK_URL est défini, sinon fallback en polling
-    if WEBHOOK_URL:
-        full_webhook_url = WEBHOOK_URL.rstrip('/') + WEBHOOK_PATH
-        print(f"🌐 Démarrage en mode Webhook sur {full_webhook_url} (port {PORT})")
-        app.run_webhook(
-            listen="0.0.0.0",
-            port=PORT,
-            secret_token=WEBHOOK_SECRET,
-            webhook_url=full_webhook_url,
-            drop_pending_updates=True,
-        )
-    else:
-        print("🛰️ WEBHOOK_URL non défini → démarrage en mode polling")
-        app.run_polling(drop_pending_updates=True)
