@@ -7,17 +7,10 @@ from datetime import datetime
 from typing import List, Dict, Any
 
 from flask import Flask, request, jsonify, send_from_directory, redirect, url_for, Response
-from telegram import Update
 from flask_cors import CORS
 import sqlite3
 from contextlib import contextmanager
 from dotenv import load_dotenv
-from gamousonagedbot import (
-    build_application as build_telegram_application,
-    WEBHOOK_SECRET as TG_WEBHOOK_SECRET,
-    WEBHOOK_URL as TG_WEBHOOK_URL,
-    WEBHOOK_PATH as TG_WEBHOOK_PATH,
-)
 
 # Charger les variables d'environnement
 load_dotenv('config.env')
@@ -129,9 +122,16 @@ telegram_app = None
 _tg_started = False
 _tg_enabled = os.getenv("START_TG_ON_BOOT", "1").lower() not in ("0", "false", "no")
 
+# Lire les variables webhook côté Flask pour éviter les imports croisés
+TG_WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
+TG_WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+TG_WEBHOOK_PATH = os.getenv("WEBHOOK_PATH", "/webhook")
+
 async def _start_telegram_app() -> None:
     global telegram_app
     if telegram_app is None:
+        # Import paresseux pour éviter erreurs d'import au boot
+        from gamousonagedbot import build_application as build_telegram_application
         telegram_app = build_telegram_application()
     await telegram_app.initialize()
     await telegram_app.start()
@@ -209,7 +209,11 @@ def telegram_webhook() -> Response:
 
     payload = request.get_json(silent=True) or {}
     try:
-        update = Update.de_json(payload, telegram_app.bot)
+        # Import paresseux pour éviter dépendance Telegram à l'import
+        if telegram_app is None:
+            return jsonify({"status": "unavailable"}), 503
+        from telegram import Update as TGUpdate
+        update = TGUpdate.de_json(payload, telegram_app.bot)
         # Enqueue l'update pour traitement par PTB
         telegram_app.update_queue.put_nowait(update)
     except Exception as e:
