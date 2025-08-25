@@ -12,7 +12,12 @@ from flask_cors import CORS
 import sqlite3
 from contextlib import contextmanager
 from dotenv import load_dotenv
-from gamousonagedbot import build_application as build_telegram_application, WEBHOOK_SECRET as TG_WEBHOOK_SECRET
+from gamousonagedbot import (
+    build_application as build_telegram_application,
+    WEBHOOK_SECRET as TG_WEBHOOK_SECRET,
+    WEBHOOK_URL as TG_WEBHOOK_URL,
+    WEBHOOK_PATH as TG_WEBHOOK_PATH,
+)
 
 # Charger les variables d'environnement
 load_dotenv('config.env')
@@ -125,6 +130,18 @@ _tg_started = False
 async def _start_telegram_app() -> None:
     await telegram_app.initialize()
     await telegram_app.start()
+    # Enregistrer le webhook côté Telegram si une URL publique est fournie
+    if TG_WEBHOOK_URL:
+        full_url = TG_WEBHOOK_URL.rstrip('/') + TG_WEBHOOK_PATH
+        try:
+            await telegram_app.bot.set_webhook(
+                url=full_url,
+                secret_token=TG_WEBHOOK_SECRET,
+                drop_pending_updates=True,
+            )
+            print(f"✅ Webhook Telegram enregistré: {full_url}")
+        except Exception as e:
+            print(f"⚠️ Impossible d'enregistrer le webhook Telegram: {e}")
 
 def _run_telegram_app_bg() -> None:
     asyncio.run(_start_telegram_app())
