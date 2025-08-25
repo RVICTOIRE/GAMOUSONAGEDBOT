@@ -4,7 +4,8 @@ import json
 import sqlite3
 from datetime import datetime
 from contextlib import contextmanager
-from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
+from telegram import Update, KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram.request import HTTPXRequest
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
 from dotenv import load_dotenv
 
@@ -12,7 +13,8 @@ from dotenv import load_dotenv
 load_dotenv('config.env')
 
 # ==== CONSTANTES ====
-DB_FILE = "signalements.db"
+# Rendre le chemin DB configurable pour pointer vers un stockage persistant en production
+DB_FILE = os.getenv("DB_FILE", "signalements.db")
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 GROUP_CHAT_ID = int(os.getenv('GROUP_CHAT_ID', 0)) if os.getenv('GROUP_CHAT_ID') else None
 
@@ -92,10 +94,14 @@ async def texte_signalement(update: Update, context: ContextTypes.DEFAULT_TYPE):
     texte = update.message.text
     context.user_data["texte"] = texte
 
-    # Demande localisation
+    # Proposer ajout de photo OU localisation
+    bouton_photo = KeyboardButton("📷 Joindre une photo")
     bouton_loc = KeyboardButton("📍 Envoyer ma localisation", request_location=True)
-    reply_markup = ReplyKeyboardMarkup([[bouton_loc]], resize_keyboard=True, one_time_keyboard=True)
-    await update.message.reply_text("Merci ! Veuillez envoyer votre localisation :", reply_markup=reply_markup)
+    reply_markup = ReplyKeyboardMarkup([[bouton_photo, bouton_loc]], resize_keyboard=True, one_time_keyboard=True)
+    await update.message.reply_text(
+        "Vous pouvez d'abord ajouter une photo, puis envoyer votre localisation.",
+        reply_markup=reply_markup
+    )
     return LOCALISATION
 
 # ==== Localisation du signalement ====
@@ -103,7 +109,12 @@ async def localisation_signalement(update: Update, context: ContextTypes.DEFAULT
     user = update.effective_user.full_name
     texte = context.user_data.get("texte", "")
     type_signalement = context.user_data.get("type_signalement", "Autres")
-    location = update.message.location
+    location = update.message.location if update and update.message else None
+
+    # Vérifications robustes de la localisation
+    if not location or location.latitude is None or location.longitude is None:
+        await update.message.reply_text("❌ Localisation invalide ou absente.")
+        return await demander_localisation(update, context)
     
     # Vérifier s'il y a une photo dans le contexte (optionnel)
     photo_id = context.user_data.get("photo_id")
@@ -185,23 +196,64 @@ async def add_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.photo:
         photo = update.message.photo[-1]  # La plus grande taille
         context.user_data["photo_id"] = photo.file_id
-        await update.message.reply_text("✅ Photo ajoutée au signalement !")
+        # Après une photo, ne proposer QUE la localisation
+        bouton_loc = KeyboardButton("📍 Envoyer ma localisation", request_location=True)
+        reply_markup = ReplyKeyboardMarkup([[bouton_loc]], resize_keyboard=True, one_time_keyboard=True)
+        await update.message.reply_text(
+            "✅ Photo ajoutée au signalement ! Maintenant, envoyez votre localisation.",
+            reply_markup=reply_markup,
+        )
+        return LOCALISATION
     else:
         await update.message.reply_text("❌ Veuillez envoyer une photo.")
+
+async def demander_localisation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Invite l'utilisateur à partager sa localisation avec le bouton dédié."""
+    bouton_loc = KeyboardButton("📍 Envoyer ma localisation", request_location=True)
+    reply_markup = ReplyKeyboardMarkup([[bouton_loc]], resize_keyboard=True, one_time_keyboard=True)
+    await update.message.reply_text(
+        "Veuillez partager votre localisation en appuyant sur le bouton ci-dessous.",
+        reply_markup=reply_markup,
+    )
+    return LOCALISATION
+
+async def demander_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Invite l'utilisateur à prendre/joindre une photo via l'appareil/le trombone."""
+    await update.message.reply_text(
+        "Appuyez sur l'icône appareil photo ou trombone de Telegram pour prendre/joindre une photo, puis envoyez-la ici.",
+        reply_markup=ReplyKeyboardRemove()
+    )
+    return TEXTE
 
 def build_application():
     """Construit et retourne l'application Telegram (python-telegram-bot Application)."""
     if not BOT_TOKEN:
         raise RuntimeError("BOT_TOKEN non défini dans les variables d'environnement")
 
-    application = ApplicationBuilder().token(BOT_TOKEN).build()
+    # Configurer des timeouts HTTP explicites pour éviter les erreurs ReadError intermittentes
+    request = HTTPXRequest(
+        connect_timeout=15,
+        read_timeout=60,
+        write_timeout=15,
+        pool_timeout=15,
+    )
+    application = ApplicationBuilder().token(BOT_TOKEN).request(request).build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
             CHOIX: [MessageHandler(filters.TEXT & ~filters.COMMAND, choix_type)],
-            TEXTE: [MessageHandler(filters.TEXT & ~filters.COMMAND, texte_signalement)],
-            LOCALISATION: [MessageHandler(filters.LOCATION, localisation_signalement)]
+            TEXTE: [
+                MessageHandler(filters.TEXT & filters.Regex(r"^📷 Joindre une photo$"), demander_photo),
+                MessageHandler(filters.PHOTO, add_photo),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, texte_signalement),
+            ],
+            LOCALISATION: [
+                MessageHandler(filters.TEXT & filters.Regex(r"^📷 Joindre une photo$"), demander_photo),
+                MessageHandler(filters.PHOTO, add_photo),
+                MessageHandler(filters.LOCATION, localisation_signalement),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, demander_localisation),
+            ]
         },
         fallbacks=[],
     )
