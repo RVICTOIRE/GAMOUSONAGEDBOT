@@ -13,8 +13,8 @@ Le bot Telegram et l'API Flask supportent maintenant **l'ajout de photos** aux s
 - Saisie du message détaillé
 
 ### 3. **📸 Photo (NOUVEAU)**
-- Option 1 : "📸 Prendre une photo"
-- Option 2 : "⏭️ Passer cette étape"
+- Bouton "📷 Joindre une photo" pour inviter l'envoi d'une vraie photo
+- Le bot accepte aussi les images envoyées comme documents (HD)
 
 ### 4. **📍 Localisation**
 - Envoi de la position GPS
@@ -93,12 +93,14 @@ git push origin main
 ```
 
 ### 2. **Sur Railway :**
-- Le déploiement se fait automatiquement
-- La base de données se met à jour automatiquement
+- Définissez les variables d'env du bot: `BOT_TOKEN`, `DB_FILE`, `WEBHOOK_URL`, `WEBHOOK_PATH` (optionnel), `WEBHOOK_SECRET` (optionnel), `PORT`
+- Définissez l'API Flask avec `DB_FILE` identique au bot
+- Pointez `WEBHOOK_URL` vers votre domaine public + `WEBHOOK_PATH`
 
 ### 3. **Testez :**
 - Envoyez `/start` au bot
-- Suivez le nouveau flux avec photo
+- Appuyez sur "📷 Joindre une photo" puis envoyez une photo
+- Partagez la localisation
 - Vérifiez les notifications dans le groupe
 
 ## ✅ Avantages

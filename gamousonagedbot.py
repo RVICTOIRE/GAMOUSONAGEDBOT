@@ -17,6 +17,10 @@ load_dotenv('config.env')
 DB_FILE = os.getenv("DB_FILE", "signalements.db")
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 GROUP_CHAT_ID = int(os.getenv('GROUP_CHAT_ID', 0)) if os.getenv('GROUP_CHAT_ID') else None
+WEBHOOK_URL = os.getenv('WEBHOOK_URL')  # ex: https://your-domain.tld/bot
+WEBHOOK_PATH = os.getenv('WEBHOOK_PATH', '/webhook')
+WEBHOOK_SECRET = os.getenv('WEBHOOK_SECRET')  # optionnel mais recommandé
+PORT = int(os.getenv('PORT', '8080'))
 
 # États de la conversation
 CHOIX, TEXTE, LOCALISATION = range(3)
@@ -295,4 +299,18 @@ if __name__ == "__main__":
         print(f"📢 Notifications activées pour le groupe: {GROUP_CHAT_ID}")
     else:
         print("⚠️ Notifications groupe désactivées (GROUP_CHAT_ID = None)")
-    app.run_polling()
+
+    # Mode Webhook si WEBHOOK_URL est défini, sinon fallback en polling
+    if WEBHOOK_URL:
+        full_webhook_url = WEBHOOK_URL.rstrip('/') + WEBHOOK_PATH
+        print(f"🌐 Démarrage en mode Webhook sur {full_webhook_url} (port {PORT})")
+        app.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            secret_token=WEBHOOK_SECRET,
+            webhook_url=full_webhook_url,
+            drop_pending_updates=True,
+        )
+    else:
+        print("🛰️ WEBHOOK_URL non défini → démarrage en mode polling")
+        app.run_polling(drop_pending_updates=True)
