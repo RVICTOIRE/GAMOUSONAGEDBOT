@@ -151,7 +151,6 @@ async def _start_telegram_app() -> None:
 def _run_telegram_app_bg() -> None:
     asyncio.run(_start_telegram_app())
 
-@app.before_serving
 def _ensure_tg_started() -> None:
     global _tg_started
     if _tg_started or not _tg_enabled:
@@ -162,6 +161,8 @@ def _ensure_tg_started() -> None:
 
 @app.get("/")
 def index() -> Response:
+    # S'assurer que le bot démarre (si activé) à la première requête
+    _ensure_tg_started()
     return (
         "Signalements SONAGED API is running. Visit /carte or /dashboard.",
         200,
@@ -171,6 +172,7 @@ def index() -> Response:
 
 @app.route("/health", methods=["GET", "HEAD"])
 def health() -> Response:
+    _ensure_tg_started()
     return ("ok", 200, {"Content-Type": "text/plain; charset=utf-8"})
 
 # Alias supplémentaires pour compatibilité plateformes
