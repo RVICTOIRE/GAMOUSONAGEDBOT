@@ -124,8 +124,25 @@ _tg_enabled = os.getenv("START_TG_ON_BOOT", "1").lower() not in ("0", "false", "
 
 # Lire les variables webhook côté Flask pour éviter les imports croisés
 TG_WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
-TG_WEBHOOK_URL = os.getenv("WEBHOOK_URL")
-TG_WEBHOOK_PATH = os.getenv("WEBHOOK_PATH", "/webhook")
+TG_WEBHOOK_URL = (os.getenv("WEBHOOK_URL") or "").strip()
+TG_WEBHOOK_PATH = (os.getenv("WEBHOOK_PATH", "/webhook") or "").strip() or "/webhook"
+
+# Normalisation de l'URL complète
+def _compute_full_webhook_url(base_url: str, path: str) -> str | None:
+    if not base_url:
+        return None
+    base = base_url.strip()
+    # Supprimer caractères non imprimables courants \r / \n / \t
+    base = base.replace("\r", "").replace("\n", "").replace("\t", "")
+    path_clean = (path or "/webhook").strip()
+    path_clean = path_clean.replace("\r", "").replace("\n", "").replace("\t", "")
+    if not path_clean.startswith("/"):
+        path_clean = "/" + path_clean
+    # Éviter de doubler le path si déjà présent
+    if base.endswith(path_clean):
+        return base
+    return base.rstrip("/") + path_clean
+
 
 print(f"🔧 Configuration Telegram: enabled={_tg_enabled}, webhook_url={TG_WEBHOOK_URL}, secret={'***' if TG_WEBHOOK_SECRET else 'None'}")
 
@@ -142,8 +159,8 @@ async def _start_telegram_app() -> None:
     print("▶️ Démarrage de l'application Telegram...")
     await telegram_app.start()
     # Enregistrer le webhook côté Telegram si une URL publique est fournie
-    if TG_WEBHOOK_URL:
-        full_url = TG_WEBHOOK_URL.rstrip('/') + TG_WEBHOOK_PATH
+    full_url = _compute_full_webhook_url(TG_WEBHOOK_URL, TG_WEBHOOK_PATH)
+    if full_url:
         try:
             print(f"🌐 Enregistrement du webhook: {full_url}")
             await telegram_app.bot.set_webhook(
