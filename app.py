@@ -121,6 +121,7 @@ CORS(app)
 telegram_app = None
 _tg_started = False
 _tg_enabled = os.getenv("START_TG_ON_BOOT", "1").lower() not in ("0", "false", "no")
+_tg_loop = None  # boucle asyncio de l'application Telegram
 
 # Lire les variables webhook côté Flask pour éviter les imports croisés
 TG_WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET")
@@ -147,7 +148,7 @@ def _compute_full_webhook_url(base_url: str, path: str) -> str | None:
 print(f"🔧 Configuration Telegram: enabled={_tg_enabled}, webhook_url={TG_WEBHOOK_URL}, secret={'***' if TG_WEBHOOK_SECRET else 'None'}")
 
 async def _start_telegram_app() -> None:
-    global telegram_app
+    global telegram_app, _tg_loop
     print("🚀 Démarrage de l'application Telegram...")
     if telegram_app is None:
         # Import paresseux pour éviter erreurs d'import au boot
@@ -158,6 +159,7 @@ async def _start_telegram_app() -> None:
     await telegram_app.initialize()
     print("▶️ Démarrage de l'application Telegram...")
     await telegram_app.start()
+    _tg_loop = asyncio.get_running_loop()
     # Enregistrer le webhook côté Telegram si une URL publique est fournie
     full_url = _compute_full_webhook_url(TG_WEBHOOK_URL, TG_WEBHOOK_PATH)
     if full_url:
@@ -261,14 +263,19 @@ def telegram_webhook() -> Response:
     payload = request.get_json(silent=True) or {}
     try:
         # Import paresseux pour éviter dépendance Telegram à l'import
-        if telegram_app is None:
-            print("❌ Application Telegram non disponible")
+        if telegram_app is None or _tg_loop is None:
+            print("❌ Application Telegram non disponible ou boucle absente")
             return jsonify({"status": "unavailable"}), 503
         from telegram import Update as TGUpdate
         update = TGUpdate.de_json(payload, telegram_app.bot)
         print("✅ Update parsé:", update)
-        # Traiter directement l'update dans la boucle PTB
-        telegram_app.create_task(telegram_app.process_update(update))
+        # Soumettre le traitement sur la boucle PTB
+        fut = asyncio.run_coroutine_threadsafe(telegram_app.process_update(update), _tg_loop)
+        # Optionnel: vérifier les exceptions rapidement
+        try:
+            fut.result(timeout=0)
+        except Exception:
+            pass
         print("✅ Update soumis au processeur PTB")
     except Exception as e:
         print("❌ Erreur traitement update:", str(e))
