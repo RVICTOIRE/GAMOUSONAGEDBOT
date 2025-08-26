@@ -107,7 +107,7 @@ async def texte_signalement(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Vous pouvez d'abord ajouter une photo, puis envoyer votre localisation.",
         reply_markup=reply_markup
     )
-    return LOCALISATION
+    return TEXTE
 
 # ==== Localisation du signalement ====
 async def localisation_signalement(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -159,18 +159,27 @@ Voir sur la carte: https://gamousonagedbot-production.up.railway.app/carte"""
             
             if photo_id:
                 # Envoyer la photo (ou document image) avec la notification
-                if context.user_data.get("photo_is_document"):
-                    await context.bot.send_document(
-                        chat_id=GROUP_CHAT_ID,
-                        document=photo_id,
-                        caption=notification
-                    )
-                else:
+                try:
                     await context.bot.send_photo(
                         chat_id=GROUP_CHAT_ID,
                         photo=photo_id,
                         caption=notification
                     )
+                except Exception as e:
+                    # Si échec (ex: c'est un document image), fallback en document
+                    try:
+                        await context.bot.send_document(
+                            chat_id=GROUP_CHAT_ID,
+                            document=photo_id,
+                            caption=notification
+                        )
+                    except Exception as e2:
+                        print(f"Erreur envoi média groupe: {e2}")
+                        await context.bot.send_message(
+                            chat_id=GROUP_CHAT_ID,
+                            text=notification,
+                            disable_web_page_preview=True
+                        )
             else:
                 # Envoyer seulement le texte
                 await context.bot.send_message(
@@ -274,7 +283,8 @@ def build_application():
             CHOIX: [MessageHandler(filters.TEXT & ~filters.COMMAND, choix_type)],
             TEXTE: [
                 MessageHandler(filters.TEXT & filters.Regex(r"^📷 Joindre une photo$"), demander_photo),
-                MessageHandler(filters.PHOTO, add_photo),
+                MessageHandler(filters.PHOTO | (filters.Document.IMAGE), add_photo),
+                MessageHandler(filters.LOCATION, localisation_signalement),
                 MessageHandler(filters.TEXT & ~filters.COMMAND, texte_signalement),
             ],
             LOCALISATION: [
