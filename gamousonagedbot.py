@@ -146,6 +146,7 @@ async def localisation_signalement(update: Update, context: ContextTypes.DEFAULT
 
     # Notification au groupe (si configuré)
     if GROUP_CHAT_ID:
+        print(f"📢 Tentative envoi notification groupe: {GROUP_CHAT_ID}")
         try:
             notification = f"""🚨 NOUVEAU SIGNALEMENT
 
@@ -158,6 +159,7 @@ async def localisation_signalement(update: Update, context: ContextTypes.DEFAULT
 Voir sur la carte: https://gamousonagedbot-production.up.railway.app/carte"""
             
             if photo_id:
+                print(f"📸 Envoi avec photo: {photo_id}")
                 # Envoyer la photo (ou document image) avec la notification
                 try:
                     await context.bot.send_photo(
@@ -165,7 +167,9 @@ Voir sur la carte: https://gamousonagedbot-production.up.railway.app/carte"""
                         photo=photo_id,
                         caption=notification
                     )
+                    print("✅ Photo envoyée au groupe")
                 except Exception as e:
+                    print(f"⚠️ Erreur envoi photo: {e}")
                     # Si échec (ex: c'est un document image), fallback en document
                     try:
                         await context.bot.send_document(
@@ -173,22 +177,28 @@ Voir sur la carte: https://gamousonagedbot-production.up.railway.app/carte"""
                             document=photo_id,
                             caption=notification
                         )
+                        print("✅ Document envoyé au groupe")
                     except Exception as e2:
-                        print(f"Erreur envoi média groupe: {e2}")
+                        print(f"❌ Erreur envoi document: {e2}")
                         await context.bot.send_message(
                             chat_id=GROUP_CHAT_ID,
                             text=notification,
                             disable_web_page_preview=True
                         )
+                        print("✅ Message texte envoyé au groupe")
             else:
+                print("📝 Envoi sans photo")
                 # Envoyer seulement le texte
                 await context.bot.send_message(
                     chat_id=GROUP_CHAT_ID,
                     text=notification,
                     disable_web_page_preview=True
                 )
+                print("✅ Message texte envoyé au groupe")
         except Exception as e:
-            print(f"Erreur notification groupe: {e}")
+            print(f"❌ Erreur notification groupe: {e}")
+    else:
+        print("⚠️ GROUP_CHAT_ID non défini, pas de notification groupe")
 
     await update.message.reply_text("✅ Signalement complet enregistré !")
     context.user_data.clear()

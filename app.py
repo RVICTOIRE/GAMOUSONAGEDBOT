@@ -248,6 +248,40 @@ def get_signalements_json() -> Response:
     return jsonify(signalements)
 
 
+@app.post("/api/refresh-json")
+def refresh_json() -> Response:
+    """Force la régénération du fichier signalements.json"""
+    try:
+        signalements = read_signalements_from_db()
+        write_json_snapshot(signalements)
+        return jsonify({"status": "ok", "message": f"JSON régénéré avec {len(signalements)} signalements"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.delete("/api/signalements/<int:signalement_id>")
+def delete_signalement(signalement_id: int) -> Response:
+    """Supprime un signalement et régénère le JSON"""
+    try:
+        with get_db_connection() as conn:
+            # Vérifier si le signalement existe
+            cursor = conn.execute("SELECT id FROM signalements WHERE id = ?", (signalement_id,))
+            if not cursor.fetchone():
+                return jsonify({"status": "error", "message": "Signalement non trouvé"}), 404
+            
+            # Supprimer le signalement
+            conn.execute("DELETE FROM signalements WHERE id = ?", (signalement_id,))
+            conn.commit()
+            
+            # Régénérer le JSON
+            signalements = read_signalements_from_db()
+            write_json_snapshot(signalements)
+            
+            return jsonify({"status": "ok", "message": "Signalement supprimé et JSON mis à jour"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 # ==== Webhook Telegram → Transfert vers l'application PTB ====
 @app.post("/webhook")
 def telegram_webhook() -> Response:
