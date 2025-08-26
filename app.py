@@ -232,23 +232,32 @@ def get_signalements_json() -> Response:
 # ==== Webhook Telegram → Transfert vers l'application PTB ====
 @app.post("/webhook")
 def telegram_webhook() -> Response:
+    print("🔔 Webhook appelé - Headers:", dict(request.headers))
+    print("🔔 Webhook payload:", request.get_json(silent=True))
+    
     # Vérification du secret (si configuré)
     provided = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
     if TG_WEBHOOK_SECRET and provided != TG_WEBHOOK_SECRET:
+        print("❌ Secret invalide - fourni:", provided, "attendu:", TG_WEBHOOK_SECRET)
         return jsonify({"status": "forbidden"}), 403
 
     payload = request.get_json(silent=True) or {}
     try:
         # Import paresseux pour éviter dépendance Telegram à l'import
         if telegram_app is None:
+            print("❌ Application Telegram non disponible")
             return jsonify({"status": "unavailable"}), 503
         from telegram import Update as TGUpdate
         update = TGUpdate.de_json(payload, telegram_app.bot)
+        print("✅ Update parsé:", update)
         # Enqueue l'update pour traitement par PTB
         telegram_app.update_queue.put_nowait(update)
+        print("✅ Update ajouté à la queue")
     except Exception as e:
+        print("❌ Erreur traitement update:", str(e))
         return jsonify({"status": "error", "message": str(e)}), 400
 
+    print("✅ Webhook traité avec succès")
     return jsonify({"status": "ok"})
 
 
