@@ -250,9 +250,9 @@ def telegram_webhook() -> Response:
         from telegram import Update as TGUpdate
         update = TGUpdate.de_json(payload, telegram_app.bot)
         print("✅ Update parsé:", update)
-        # Enqueue l'update pour traitement par PTB
-        telegram_app.update_queue.put_nowait(update)
-        print("✅ Update ajouté à la queue")
+        # Traiter directement l'update dans la boucle PTB
+        telegram_app.create_task(telegram_app.process_update(update))
+        print("✅ Update soumis au processeur PTB")
     except Exception as e:
         print("❌ Erreur traitement update:", str(e))
         return jsonify({"status": "error", "message": str(e)}), 400
