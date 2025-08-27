@@ -15,7 +15,7 @@ load_dotenv()  # Charge aussi depuis les variables d'environnement système
 
 # ==== CONSTANTES ====
 # Rendre le chemin DB configurable pour pointer vers un stockage persistant en production
-DB_FILE = os.getenv("DB_FILE", "signalements.db")
+DB_FILE = os.getenv("DB_FILE", "/app/data/signalements.db")
 BOT_TOKEN = os.getenv('BOT_TOKEN') or os.environ.get('BOT_TOKEN')
 GROUP_CHAT_ID = int(os.getenv('GROUP_CHAT_ID', 0)) if os.getenv('GROUP_CHAT_ID') else None
 WEBHOOK_URL = os.getenv('WEBHOOK_URL')  # ex: https://your-domain.tld/bot
@@ -58,6 +58,7 @@ def ensure_db_exists():
 
 # ==== Fonction mise à jour JSON ====
 def mise_a_jour_json():
+    print(f"🔄 Mise à jour JSON - DB_FILE: {DB_FILE}")
     ensure_db_exists()
     df = []
     with get_db_connection() as conn:
@@ -66,7 +67,9 @@ def mise_a_jour_json():
             FROM signalements
             ORDER BY date_heure DESC
         """)
-        for row in cursor.fetchall():
+        rows = cursor.fetchall()
+        print(f"📊 Signalements trouvés en DB: {len(rows)}")
+        for row in rows:
             df.append({
                 "Date/Heure": row["date_heure"],
                 "Utilisateur": row["utilisateur"],
@@ -76,8 +79,12 @@ def mise_a_jour_json():
                 "Latitude": row["latitude"],
                 "Longitude": row["longitude"]
             })
-    with open("signalements.json", "w", encoding="utf-8") as f:
-        json.dump(df, f, ensure_ascii=False, indent=4)
+    try:
+        with open("signalements.json", "w", encoding="utf-8") as f:
+            json.dump(df, f, ensure_ascii=False, indent=4)
+        print(f"✅ JSON mis à jour avec {len(df)} signalements")
+    except Exception as e:
+        print(f"❌ Erreur écriture JSON: {e}")
 
 # ==== /start ====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -125,6 +132,7 @@ async def localisation_signalement(update: Update, context: ContextTypes.DEFAULT
     photo_id = context.user_data.get("photo_id")
 
     # Enregistre dans DB
+    print(f"💾 Insertion en DB - DB_FILE: {DB_FILE}")
     ensure_db_exists()
     with get_db_connection() as conn:
         conn.execute("""
@@ -140,6 +148,7 @@ async def localisation_signalement(update: Update, context: ContextTypes.DEFAULT
             location.longitude
         ))
         conn.commit()
+        print(f"✅ Signalement inséré en DB pour {user}")
 
     # Mise à jour JSON
     mise_a_jour_json()

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Administration - Signalements</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; }
+  h1 { margin-bottom: 8px; }
+  .controls { margin-bottom: 16px; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #ddd; padding: 8px; }
+  th { background: #f5f5f5; text-align: left; }
+  tr:nth-child(even) { background: #fafafa; }
+  input[type="text"] { width: 320px; padding: 6px; }
+  button { padding: 6px 10px; cursor: pointer; }
+</style>
+</head>
+<body>
+  <h1>Administration - Signalements</h1>
+  <div class="controls">
+    <label>Admin token: <input id="token" type="text" placeholder="Coller ADMIN_TOKEN ici" /></label>
+    <button onclick="loadData()">Rafraîchir</button>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Date/Heure</th>
+        <th>Utilisateur</th>
+        <th>Type</th>
+        <th>Message</th>
+        <th>Latitude</th>
+        <th>Longitude</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody id="rows">
+      <tr><td colspan="8">Chargement…</td></tr>
+    </tbody>
+  </table>
+  <script>
+    async function loadData() {
+      const token = document.getElementById('token').value.trim();
+      const res = await fetch(`/api/admin/signalements?token=${encodeURIComponent(token)}`);
+      const tbody = document.getElementById('rows');
+      if (!res.ok) {
+        tbody.innerHTML = `<tr><td colspan="8">Erreur ${res.status} - vérifiez le token</td></tr>`;
+        return;
+      }
+      const data = await res.json();
+      if (!Array.isArray(data) || data.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8">Aucun signalement</td></tr>';
+        return;
+      }
+      tbody.innerHTML = data.map(item => {
+        const id = item.id;
+        const date = item['Date/Heure'] || '';
+        const user = item['Utilisateur'] || '';
+        const type = item['Type'] || '';
+        const msg = item['Message'] || '';
+        const lat = item['Latitude'] ?? '';
+        const lng = item['Longitude'] ?? '';
+        return `<tr>
+          <td>${id}</td>
+          <td>${escapeHtml(date)}</td>
+          <td>${escapeHtml(user)}</td>
+          <td>${escapeHtml(type)}</td>
+          <td>${escapeHtml(msg)}</td>
+          <td>${lat}</td>
+          <td>${lng}</td>
+          <td><button onclick="del(${id})">Supprimer</button></td>
+        </tr>`;
+      }).join('');
+    }
+
+    async function del(id) {
+      const token = document.getElementById('token').value.trim();
+      if (!confirm(`Supprimer le signalement ${id} ?`)) return;
+      const res = await fetch(`/api/signalements/${id}?token=${encodeURIComponent(token)}`, { method: 'DELETE' });
+      if (!res.ok) {
+        alert('Suppression échouée - vérifiez le token');
+        return;
+      }
+      await loadData();
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"]+/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[s]));
+    }
+
+    loadData();
+  </script>
+</body>
+</html>
