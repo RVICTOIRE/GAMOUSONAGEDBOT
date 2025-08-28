@@ -489,8 +489,29 @@ def admin_list_signalements() -> Response:
     return jsonify(data)
 
 
+def read_signalements_for_display() -> List[Dict[str, Any]]:
+    """Lit les signalements comme la carte/admin: JSON d'abord, DB en repli."""
+    # 1) JSON principal
+    try:
+        if os.path.exists(JSON_FILE) and os.path.getsize(JSON_FILE) > 0:
+            with open(JSON_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"Erreur lecture JSON_FILE ({JSON_FILE}) pour display: {e}")
+    # 2) JSON legacy
+    legacy_path = os.path.join(".", "signalements.json")
+    try:
+        if os.path.exists(legacy_path) and os.path.getsize(legacy_path) > 0:
+            with open(legacy_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+    except Exception as e:
+        print(f"Erreur lecture legacy JSON ({legacy_path}) pour display: {e}")
+    # 3) Repli DB
+    return read_signalements_from_db()
+
+
 def compute_stats_from_db() -> Dict[str, Any]:
-    entries = read_signalements_from_db()
+    entries = read_signalements_for_display()
     total = len(entries)
     by_type: Dict[str, int] = {}
     by_day: Dict[str, int] = {}
@@ -506,16 +527,13 @@ def compute_stats_from_db() -> Dict[str, Any]:
                 dt = datetime.strptime(date_raw, "%Y-%m-%d %H:%M:%S")
                 day_key = dt.strftime("%Y-%m-%d")
             except Exception:
-                # Si le format n'est pas attendu, on prend la partie date si disponible
                 day_key = date_raw[:10]
         else:
             day_key = "inconnu"
         by_day[day_key] = by_day.get(day_key, 0) + 1
 
-    # Ordonner les jours
     by_day_sorted = dict(sorted(by_day.items(), key=lambda kv: kv[0]))
 
-    # Dernières entrées (max 20), triées par date décroissante si possible
     def sort_key(item: Dict[str, Any]):
         try:
             return datetime.strptime(item.get("Date/Heure", ""), "%Y-%m-%d %H:%M:%S")

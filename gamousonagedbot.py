@@ -16,6 +16,7 @@ load_dotenv()  # Charge aussi depuis les variables d'environnement système
 # ==== CONSTANTES ====
 # Rendre le chemin DB configurable pour pointer vers un stockage persistant en production
 DB_FILE = os.getenv("DB_FILE", "/app/data/signalements.db")
+JSON_FILE = os.getenv("JSON_FILE", "/app/data/signalements.json")
 BOT_TOKEN = os.getenv('BOT_TOKEN') or os.environ.get('BOT_TOKEN')
 GROUP_CHAT_ID = int(os.getenv('GROUP_CHAT_ID', 0)) if os.getenv('GROUP_CHAT_ID') else None
 WEBHOOK_URL = os.getenv('WEBHOOK_URL')  # ex: https://your-domain.tld/bot
@@ -76,8 +77,12 @@ def mise_a_jour_json():
                 "Latitude": row["latitude"],
                 "Longitude": row["longitude"]
             })
-    with open("signalements.json", "w", encoding="utf-8") as f:
-        json.dump(df, f, ensure_ascii=False, indent=4)
+    try:
+        _ensure_parent_dir(JSON_FILE)
+        with open(JSON_FILE, "w", encoding="utf-8") as f:
+            json.dump(df, f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        print(f"Erreur écriture JSON: {e}")
 
 # ==== /start ====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -272,6 +277,14 @@ async def demander_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=ReplyKeyboardRemove()
     )
     return TEXTE
+
+def _ensure_parent_dir(path: str) -> None:
+    try:
+        parent = os.path.dirname(path or "")
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+    except Exception as e:
+        print(f"Erreur création dossier parent pour {path}: {e}")
 
 def build_application():
     """Construit et retourne l'application Telegram (python-telegram-bot Application)."""
