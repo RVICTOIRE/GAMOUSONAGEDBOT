@@ -248,13 +248,31 @@ def form() -> Response:
 
 @app.get("/signalements.json")
 def get_signalements_json() -> Response:
+    # 1) Tenter de servir le fichier JSON configuré
+    try:
+        if os.path.exists(JSON_FILE) and os.path.getsize(JSON_FILE) > 0:
+            with open(JSON_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return jsonify(data)
+    except Exception as e:
+        print(f"Erreur lecture JSON_FILE ({JSON_FILE}): {e}")
+    
+    # 2) Compatibilité: tenter l'ancien fichier à la racine
+    legacy_path = os.path.join(".", "signalements.json")
+    try:
+        if os.path.exists(legacy_path) and os.path.getsize(legacy_path) > 0:
+            with open(legacy_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return jsonify(data)
+    except Exception as e:
+        print(f"Erreur lecture legacy JSON ({legacy_path}): {e}")
+
+    # 3) Repli: lire depuis la DB et réécrire le snapshot
     signalements = read_signalements_from_db()
-    # Met à jour un snapshot fichier pour compatibilité avec d'autres usages éventuels
     try:
         write_json_snapshot(signalements)
     except Exception as e:
         print(f"Erreur écriture JSON: {e}")
-        # En cas d'échec d'écriture, on renvoie tout de même la réponse
         pass
     return jsonify(signalements)
 
@@ -417,6 +435,35 @@ def api_create_signalement() -> Response:
 def admin_list_signalements() -> Response:
     if not require_admin():
         return jsonify({"status": "forbidden"}), 403
+    # Lire depuis le JSON comme la carte/tableau de bord
+    try:
+        if os.path.exists(JSON_FILE) and os.path.getsize(JSON_FILE) > 0:
+            with open(JSON_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            # Ajouter un champ id=None (le JSON ne contient pas l'ID DB)
+            return jsonify([
+                {
+                    "id": None,
+                    **item
+                } for item in data
+            ])
+    except Exception as e:
+        print(f"Erreur lecture JSON_FILE ({JSON_FILE}) pour admin: {e}")
+    # Fallback legacy
+    legacy_path = os.path.join(".", "signalements.json")
+    try:
+        if os.path.exists(legacy_path) and os.path.getsize(legacy_path) > 0:
+            with open(legacy_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return jsonify([
+                {
+                    "id": None,
+                    **item
+                } for item in data
+            ])
+    except Exception as e:
+        print(f"Erreur lecture legacy JSON ({legacy_path}) pour admin: {e}")
+    # Repli DB si JSON absent
     ensure_db_exists()
     with get_db_connection() as conn:
         cursor = conn.execute(
