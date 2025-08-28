@@ -22,8 +22,18 @@ DB_FILE = os.getenv("DB_FILE", "/app/data/signalements.db")
 JSON_FILE = os.getenv("JSON_FILE", "/app/data/signalements.json")
 
 
+def _ensure_parent_dir(path: str) -> None:
+    try:
+        parent = os.path.dirname(path or "")
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+    except Exception as e:
+        print(f"Erreur création dossier parent pour {path}: {e}")
+
+
 @contextmanager
 def get_db_connection():
+    _ensure_parent_dir(DB_FILE)
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     try:
@@ -109,6 +119,7 @@ def append_signalement_to_db(utilisateur: str, type_signalement: str, message: s
 
 
 def write_json_snapshot(signalements: List[Dict[str, Any]]) -> None:
+    _ensure_parent_dir(JSON_FILE)
     with open(JSON_FILE, "w", encoding="utf-8") as file:
         json.dump(signalements, file, ensure_ascii=False, indent=4)
 
