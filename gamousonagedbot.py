@@ -15,7 +15,7 @@ load_dotenv()  # Charge aussi depuis les variables d'environnement système
 
 # ==== CONSTANTES ====
 # Rendre le chemin DB configurable pour pointer vers un stockage persistant en production
-DB_FILE = os.getenv("DB_FILE", "/app/data/signalements.db")
+DB_FILE = os.getenv("DB_FILE", "./signalements.db")  # Même DB que l'API
 JSON_FILE = os.getenv("JSON_FILE", "./signalements.json")  # Même chemin que l'API
 BOT_TOKEN = os.getenv('BOT_TOKEN') or os.environ.get('BOT_TOKEN')
 GROUP_CHAT_ID = int(os.getenv('GROUP_CHAT_ID', 0)) if os.getenv('GROUP_CHAT_ID') else None

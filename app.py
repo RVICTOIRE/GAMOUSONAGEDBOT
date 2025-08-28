@@ -18,7 +18,7 @@ load_dotenv('config.env')
 
 # ==== CONSTANTES ====
 # Rendre le chemin de la base configurable pour la production (ex: Railway Volume /app/data/signalements.db)
-DB_FILE = os.getenv("DB_FILE", "/app/data/signalements.db")
+DB_FILE = os.getenv("DB_FILE", "./signalements.db")  # Même DB que le bot
 JSON_FILE = os.getenv("JSON_FILE", "./signalements.json")  # Même chemin que le bot
 
 
