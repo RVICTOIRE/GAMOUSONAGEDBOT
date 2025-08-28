@@ -17,9 +17,9 @@ load_dotenv('config.env')
 
 
 # ==== CONSTANTES ====
-# Rendre le chemin de la base configurable pour la production (ex: Railway Volume /data/signalements.db)
-DB_FILE = os.getenv("DB_FILE", "signalements.db")
-JSON_FILE = os.getenv("JSON_FILE", "signalements.json")
+# Rendre le chemin de la base configurable pour la production (ex: Railway Volume /app/data/signalements.db)
+DB_FILE = os.getenv("DB_FILE", "/app/data/signalements.db")
+JSON_FILE = os.getenv("JSON_FILE", "/app/data/signalements.json")
 
 
 @contextmanager
