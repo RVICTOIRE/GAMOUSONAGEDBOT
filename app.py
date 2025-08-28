@@ -618,6 +618,82 @@ def admin_page() -> Response:
     return send_from_directory(".", "admin.html")
 
 
+@app.get("/debug/db-vs-json")
+def debug_db_vs_json() -> Response:
+    """Compare la DB et le JSON pour voir les différences"""
+    try:
+        # Lire depuis la DB
+        db_signalements = read_signalements_from_db()
+        
+        # Lire depuis le JSON
+        json_signalements = []
+        if os.path.exists(JSON_FILE) and os.path.getsize(JSON_FILE) > 0:
+            with open(JSON_FILE, "r", encoding="utf-8") as f:
+                json_signalements = json.load(f)
+        
+        # Comparer
+        db_count = len(db_signalements)
+        json_count = len(json_signalements)
+        
+        # Trouver les signalements en DB mais pas en JSON
+        db_dates = {s["Date/Heure"] for s in db_signalements}
+        json_dates = {s["Date/Heure"] for s in json_signalements}
+        missing_in_json = db_dates - json_dates
+        
+        # Signalements manquants dans le JSON
+        missing_signalements = [s for s in db_signalements if s["Date/Heure"] in missing_in_json]
+        
+        return jsonify({
+            "db_count": db_count,
+            "json_count": json_count,
+            "missing_in_json_count": len(missing_in_json),
+            "missing_in_json": missing_signalements,
+            "db_file": DB_FILE,
+            "json_file": JSON_FILE,
+            "db_exists": os.path.exists(DB_FILE),
+            "json_exists": os.path.exists(JSON_FILE)
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.get("/debug/all-dbs")
+def debug_all_dbs() -> Response:
+    """Vérifie tous les emplacements possibles de la base de données"""
+    possible_dbs = [
+        "/app/data/signalements.db",
+        "./signalements.db", 
+        "signalements.db",
+        "/tmp/signalements.db"
+    ]
+    
+    results = {}
+    for db_path in possible_dbs:
+        try:
+            if os.path.exists(db_path):
+                conn = sqlite3.connect(db_path)
+                cursor = conn.execute("SELECT COUNT(*) as count FROM signalements")
+                count = cursor.fetchone()[0]
+                cursor = conn.execute("SELECT date_heure, utilisateur, type FROM signalements ORDER BY date_heure DESC LIMIT 5")
+                recent = [{"date": row[0], "user": row[1], "type": row[2]} for row in cursor.fetchall()]
+                conn.close()
+                results[db_path] = {
+                    "exists": True,
+                    "count": count,
+                    "recent": recent,
+                    "size": os.path.getsize(db_path)
+                }
+            else:
+                results[db_path] = {"exists": False}
+        except Exception as e:
+            results[db_path] = {"exists": False, "error": str(e)}
+    
+    return jsonify({
+        "current_db_file": DB_FILE,
+        "databases": results
+    })
+
+
 if __name__ == "__main__":
     ensure_db_exists()
     port = int(os.getenv("PORT", "5000"))
