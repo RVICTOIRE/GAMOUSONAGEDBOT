@@ -253,7 +253,9 @@ def get_signalements_json() -> Response:
         if os.path.exists(JSON_FILE) and os.path.getsize(JSON_FILE) > 0:
             with open(JSON_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            return jsonify(data)
+            resp = jsonify(data)
+            resp.headers["Cache-Control"] = "no-store, max-age=0"
+            return resp
     except Exception as e:
         print(f"Erreur lecture JSON_FILE ({JSON_FILE}): {e}")
     
@@ -263,7 +265,9 @@ def get_signalements_json() -> Response:
         if os.path.exists(legacy_path) and os.path.getsize(legacy_path) > 0:
             with open(legacy_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            return jsonify(data)
+            resp = jsonify(data)
+            resp.headers["Cache-Control"] = "no-store, max-age=0"
+            return resp
     except Exception as e:
         print(f"Erreur lecture legacy JSON ({legacy_path}): {e}")
 
@@ -274,7 +278,9 @@ def get_signalements_json() -> Response:
     except Exception as e:
         print(f"Erreur écriture JSON: {e}")
         pass
-    return jsonify(signalements)
+    resp = jsonify(signalements)
+    resp.headers["Cache-Control"] = "no-store, max-age=0"
+    return resp
 
 
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
@@ -440,13 +446,11 @@ def admin_list_signalements() -> Response:
         if os.path.exists(JSON_FILE) and os.path.getsize(JSON_FILE) > 0:
             with open(JSON_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            # Ajouter un champ id=None (le JSON ne contient pas l'ID DB)
-            return jsonify([
-                {
-                    "id": None,
-                    **item
-                } for item in data
+            resp = jsonify([
+                {"id": None, **item} for item in data
             ])
+            resp.headers["Cache-Control"] = "no-store, max-age=0"
+            return resp
     except Exception as e:
         print(f"Erreur lecture JSON_FILE ({JSON_FILE}) pour admin: {e}")
     # Fallback legacy
@@ -455,12 +459,11 @@ def admin_list_signalements() -> Response:
         if os.path.exists(legacy_path) and os.path.getsize(legacy_path) > 0:
             with open(legacy_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            return jsonify([
-                {
-                    "id": None,
-                    **item
-                } for item in data
+            resp = jsonify([
+                {"id": None, **item} for item in data
             ])
+            resp.headers["Cache-Control"] = "no-store, max-age=0"
+            return resp
     except Exception as e:
         print(f"Erreur lecture legacy JSON ({legacy_path}) pour admin: {e}")
     # Repli DB si JSON absent
@@ -486,7 +489,9 @@ def admin_list_signalements() -> Response:
             }
             for row in cursor.fetchall()
         ]
-    return jsonify(data)
+    resp = jsonify(data)
+    resp.headers["Cache-Control"] = "no-store, max-age=0"
+    return resp
 
 
 def read_signalements_for_display() -> List[Dict[str, Any]]:
@@ -553,7 +558,9 @@ def compute_stats_from_db() -> Dict[str, Any]:
 @app.get("/api/stats")
 def api_stats() -> Response:
     stats = compute_stats_from_db()
-    return jsonify(stats)
+    resp = jsonify(stats)
+    resp.headers["Cache-Control"] = "no-store, max-age=0"
+    return resp
 
 
 @app.get("/dashboard")
