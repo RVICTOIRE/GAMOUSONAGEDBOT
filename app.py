@@ -253,6 +253,7 @@ def get_signalements_json() -> Response:
         if os.path.exists(JSON_FILE) and os.path.getsize(JSON_FILE) > 0:
             with open(JSON_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
+            print(f"/signalements.json servi depuis JSON_FILE: {JSON_FILE} (n={len(data)})")
             resp = jsonify(data)
             resp.headers["Cache-Control"] = "no-store, max-age=0"
             return resp
@@ -265,6 +266,7 @@ def get_signalements_json() -> Response:
         if os.path.exists(legacy_path) and os.path.getsize(legacy_path) > 0:
             with open(legacy_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
+            print(f"/signalements.json servi depuis legacy: {legacy_path} (n={len(data)})")
             resp = jsonify(data)
             resp.headers["Cache-Control"] = "no-store, max-age=0"
             return resp
@@ -278,9 +280,53 @@ def get_signalements_json() -> Response:
     except Exception as e:
         print(f"Erreur écriture JSON: {e}")
         pass
+    print(f"/signalements.json repli DB (n={len(signalements)}) et snapshot réécrit vers {JSON_FILE}")
     resp = jsonify(signalements)
     resp.headers["Cache-Control"] = "no-store, max-age=0"
     return resp
+
+
+@app.get("/debug/json")
+def debug_json_meta() -> Response:
+    legacy_path = os.path.join(".", "signalements.json")
+    def stat_info(path: str):
+        try:
+            return {
+                "exists": os.path.exists(path),
+                "size": os.path.getsize(path) if os.path.exists(path) else 0,
+                "mtime": os.path.getmtime(path) if os.path.exists(path) else None,
+            }
+        except Exception as e:
+            return {"error": str(e)}
+    info = {
+        "JSON_FILE": JSON_FILE,
+        "JSON_FILE_stat": stat_info(JSON_FILE),
+        "legacy_path": legacy_path,
+        "legacy_stat": stat_info(legacy_path),
+    }
+    # Essayer de charger quelques entrées pour aperçu
+    samples = []
+    try:
+        if os.path.exists(JSON_FILE) and os.path.getsize(JSON_FILE) > 0:
+            with open(JSON_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            samples = data[:3]
+            info["count"] = len(data)
+            info["source"] = "JSON_FILE"
+        elif os.path.exists(legacy_path) and os.path.getsize(legacy_path) > 0:
+            with open(legacy_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            samples = data[:3]
+            info["count"] = len(data)
+            info["source"] = "legacy"
+        else:
+            data = read_signalements_from_db()
+            samples = data[:3]
+            info["count"] = len(data)
+            info["source"] = "db"
+    except Exception as e:
+        info["load_error"] = str(e)
+    return jsonify({"meta": info, "samples": samples})
 
 
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")

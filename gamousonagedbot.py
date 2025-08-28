@@ -59,6 +59,7 @@ def ensure_db_exists():
 
 # ==== Fonction mise à jour JSON ====
 def mise_a_jour_json():
+    print(f"🔄 Mise à jour JSON - DB_FILE: {DB_FILE}, JSON_FILE: {JSON_FILE}")
     ensure_db_exists()
     df = []
     with get_db_connection() as conn:
@@ -67,7 +68,9 @@ def mise_a_jour_json():
             FROM signalements
             ORDER BY date_heure DESC
         """)
-        for row in cursor.fetchall():
+        rows = cursor.fetchall()
+        print(f"📊 Signalements trouvés en DB: {len(rows)}")
+        for row in rows:
             df.append({
                 "Date/Heure": row["date_heure"],
                 "Utilisateur": row["utilisateur"],
@@ -81,8 +84,16 @@ def mise_a_jour_json():
         _ensure_parent_dir(JSON_FILE)
         with open(JSON_FILE, "w", encoding="utf-8") as f:
             json.dump(df, f, ensure_ascii=False, indent=4)
+        print(f"✅ JSON mis à jour avec {len(df)} signalements vers {JSON_FILE}")
     except Exception as e:
-        print(f"Erreur écriture JSON: {e}")
+        print(f"❌ Erreur écriture JSON vers {JSON_FILE}: {e}")
+        # Fallback vers l'ancien chemin
+        try:
+            with open("signalements.json", "w", encoding="utf-8") as f:
+                json.dump(df, f, ensure_ascii=False, indent=4)
+            print(f"✅ JSON fallback vers signalements.json avec {len(df)} signalements")
+        except Exception as e2:
+            print(f"❌ Erreur fallback JSON: {e2}")
 
 # ==== /start ====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
