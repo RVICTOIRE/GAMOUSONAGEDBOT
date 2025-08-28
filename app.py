@@ -248,9 +248,19 @@ def get_signalements_json() -> Response:
     return jsonify(signalements)
 
 
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")
+
+def require_admin() -> bool:
+    if not ADMIN_TOKEN:
+        return True
+    token = request.headers.get("X-Admin-Token") or request.args.get("token")
+    return token == ADMIN_TOKEN
+
 @app.post("/api/refresh-json")
 def refresh_json() -> Response:
     """Force la régénération du fichier signalements.json"""
+    if not require_admin():
+        return jsonify({"status": "forbidden"}), 403
     try:
         signalements = read_signalements_from_db()
         write_json_snapshot(signalements)
@@ -262,21 +272,17 @@ def refresh_json() -> Response:
 @app.delete("/api/signalements/<int:signalement_id>")
 def delete_signalement(signalement_id: int) -> Response:
     """Supprime un signalement et régénère le JSON"""
+    if not require_admin():
+        return jsonify({"status": "forbidden"}), 403
     try:
         with get_db_connection() as conn:
-            # Vérifier si le signalement existe
             cursor = conn.execute("SELECT id FROM signalements WHERE id = ?", (signalement_id,))
             if not cursor.fetchone():
                 return jsonify({"status": "error", "message": "Signalement non trouvé"}), 404
-            
-            # Supprimer le signalement
             conn.execute("DELETE FROM signalements WHERE id = ?", (signalement_id,))
             conn.commit()
-            
-            # Régénérer le JSON
             signalements = read_signalements_from_db()
             write_json_snapshot(signalements)
-            
             return jsonify({"status": "ok", "message": "Signalement supprimé et JSON mis à jour"})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
@@ -396,6 +402,35 @@ def api_create_signalement() -> Response:
     return jsonify({"status": "ok", "signalement": created}), 201
 
 
+@app.get("/api/admin/signalements")
+def admin_list_signalements() -> Response:
+    if not require_admin():
+        return jsonify({"status": "forbidden"}), 403
+    ensure_db_exists()
+    with get_db_connection() as conn:
+        cursor = conn.execute(
+            """
+            SELECT id, date_heure, utilisateur, type, message, photo_id, latitude, longitude
+            FROM signalements
+            ORDER BY date_heure DESC
+            """
+        )
+        data = [
+            {
+                "id": row["id"],
+                "Date/Heure": row["date_heure"],
+                "Utilisateur": row["utilisateur"],
+                "Type": row["type"],
+                "Message": row["message"],
+                "Photo": row["photo_id"] if row["photo_id"] else None,
+                "Latitude": row["latitude"],
+                "Longitude": row["longitude"],
+            }
+            for row in cursor.fetchall()
+        ]
+    return jsonify(data)
+
+
 def compute_stats_from_db() -> Dict[str, Any]:
     entries = read_signalements_from_db()
     total = len(entries)
@@ -448,6 +483,10 @@ def api_stats() -> Response:
 @app.get("/dashboard")
 def dashboard() -> Response:
     return send_from_directory(".", "dashboard.html")
+
+@app.get("/admin")
+def admin_page() -> Response:
+    return send_from_directory(".", "admin.html")
 
 
 if __name__ == "__main__":
