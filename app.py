@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import List, Dict, Any
 
 from flask import Flask, request, jsonify, send_from_directory, redirect, url_for, Response
+import requests
 from flask_cors import CORS
 import sqlite3
 from contextlib import contextmanager
@@ -20,6 +21,11 @@ load_dotenv('config.env')
 # Rendre le chemin de la base configurable pour la production (ex: Railway Volume /app/data/signalements.db)
 DB_FILE = os.getenv("DB_FILE", "./signalements.db")  # Même DB que le bot
 JSON_FILE = os.getenv("JSON_FILE", "./signalements.json")  # Même chemin que le bot
+
+# WhatsApp Cloud API (Meta)
+WA_VERIFY_TOKEN = os.getenv("WA_VERIFY_TOKEN")  # pour la vérification du webhook
+WA_ACCESS_TOKEN = os.getenv("WA_ACCESS_TOKEN")  # token d'accès Graph API
+WA_PHONE_NUMBER_ID = os.getenv("WA_PHONE_NUMBER_ID")  # identifiant du numéro business
 
 
 def _ensure_parent_dir(path: str) -> None:
@@ -106,6 +112,29 @@ def append_signalement_to_db(utilisateur: str, type_signalement: str, message: s
             INSERT INTO signalements (date_heure, utilisateur, type, message, photo_id, latitude, longitude)
             VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (now_str, utilisateur, type_signalement, message, photo_id, latitude, longitude))
+        conn.commit()
+    return {
+        "Date/Heure": now_str,
+        "Utilisateur": utilisateur,
+        "Type": type_signalement,
+        "Message": message,
+        "Photo": photo_id,
+        "Latitude": latitude,
+        "Longitude": longitude,
+    }
+
+
+def append_signalement_nullable(utilisateur: str, type_signalement: str, message: str, latitude: float | None, longitude: float | None, photo_id: str | None = None) -> Dict[str, Any]:
+    ensure_db_exists()
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with get_db_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO signalements (date_heure, utilisateur, type, message, photo_id, latitude, longitude)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (now_str, utilisateur, type_signalement, message, photo_id, latitude, longitude),
+        )
         conn.commit()
     return {
         "Date/Heure": now_str,
@@ -404,6 +433,83 @@ def telegram_webhook() -> Response:
 
     print("✅ Webhook traité avec succès")
     return jsonify({"status": "ok"})
+
+
+@app.get("/webhook/whatsapp")
+def whatsapp_verify() -> Response:
+    """Verification webhook pour Meta/WhatsApp (GET challenge)"""
+    mode = request.args.get("hub.mode")
+    token = request.args.get("hub.verify_token")
+    challenge = request.args.get("hub.challenge")
+    if mode == "subscribe" and token and WA_VERIFY_TOKEN and token == WA_VERIFY_TOKEN:
+        return Response(challenge, status=200, content_type="text/plain; charset=utf-8")
+    return Response("forbidden", status=403, content_type="text/plain; charset=utf-8")
+
+
+@app.post("/webhook/whatsapp")
+def whatsapp_webhook() -> Response:
+    """Réception des messages WhatsApp via Cloud API"""
+    try:
+        payload = request.get_json(silent=True) or {}
+        # Parcourir la structure typique de Meta
+        entries = payload.get("entry") or []
+        created_count = 0
+        response_count = 0
+        for entry in entries:
+            changes = entry.get("changes") or []
+            for change in changes:
+                value = change.get("value") or {}
+                messages = value.get("messages") or []
+                contacts = value.get("contacts") or []
+                contact_name = None
+                if contacts:
+                    profile = (contacts[0] or {}).get("profile") or {}
+                    contact_name = profile.get("name")
+                for msg in messages:
+                    from_wa = msg.get("from")  # numéro MSISDN
+                    msg_type = msg.get("type")
+                    utilisateur = contact_name or from_wa or "WhatsApp"
+                    # Conversation state machine
+                    _wa_handle_incoming_message(from_wa, utilisateur, msg)
+                    response_count += 1
+                    # Data extraction for passive recording (optional)
+                    type_signalement = "WhatsApp"
+                    message_text = None
+                    photo_id = None
+                    latitude = None
+                    longitude = None
+                    if msg_type == "text":
+                        message_text = (msg.get("text") or {}).get("body")
+                    elif msg_type == "location":
+                        loc = msg.get("location") or {}
+                        latitude = loc.get("latitude")
+                        longitude = loc.get("longitude")
+                        message_text = loc.get("name") or "Localisation"
+                    elif msg_type == "image":
+                        # On enregistre une référence d'image (id media)
+                        image = msg.get("image") or {}
+                        photo_id = image.get("id")
+                        message_text = image.get("caption") or "Image"
+                    else:
+                        # autres types ignorés pour MVP
+                        continue
+                    created = append_signalement_nullable(
+                        utilisateur=utilisateur,
+                        type_signalement=type_signalement,
+                        message=message_text or "",
+                        latitude=latitude,
+                        longitude=longitude,
+                        photo_id=photo_id,
+                    )
+                    created_count += 1
+        # Mettre à jour le JSON
+        try:
+            write_json_snapshot(read_signalements_from_db())
+        except Exception:
+            pass
+        return jsonify({"status": "ok", "created": created_count, "responded": response_count})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 @app.get("/debug/signalements")
