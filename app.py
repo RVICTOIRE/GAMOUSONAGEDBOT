@@ -441,26 +441,42 @@ def whatsapp_verify() -> Response:
     mode = request.args.get("hub.mode")
     token = request.args.get("hub.verify_token")
     challenge = request.args.get("hub.challenge")
+    
+    print(f"🔍 WhatsApp verification - mode: {mode}, token: {token}, expected: {WA_VERIFY_TOKEN}")
+    
     if mode == "subscribe" and token and WA_VERIFY_TOKEN and token == WA_VERIFY_TOKEN:
+        print(f"✅ WhatsApp verification successful - returning challenge: {challenge}")
         return Response(challenge, status=200, content_type="text/plain; charset=utf-8")
+    
+    print(f"❌ WhatsApp verification failed - mode: {mode}, token match: {token == WA_VERIFY_TOKEN if token and WA_VERIFY_TOKEN else 'missing'}")
     return Response("forbidden", status=403, content_type="text/plain; charset=utf-8")
 
 
 @app.post("/webhook/whatsapp")
 def whatsapp_webhook() -> Response:
     """Réception des messages WhatsApp via Cloud API"""
+    print("🔔 WhatsApp webhook POST appelé")
+    print(f"🔔 Headers: {dict(request.headers)}")
+    
     try:
         payload = request.get_json(silent=True) or {}
+        print(f"🔔 Payload: {payload}")
+        
         # Parcourir la structure typique de Meta
         entries = payload.get("entry") or []
+        print(f"🔔 Entries trouvées: {len(entries)}")
+        
         created_count = 0
         response_count = 0
         for entry in entries:
             changes = entry.get("changes") or []
+            print(f"🔔 Changes dans entry: {len(changes)}")
             for change in changes:
                 value = change.get("value") or {}
                 messages = value.get("messages") or []
                 contacts = value.get("contacts") or []
+                print(f"🔔 Messages trouvés: {len(messages)}, Contacts: {len(contacts)}")
+                
                 contact_name = None
                 if contacts:
                     profile = (contacts[0] or {}).get("profile") or {}
@@ -468,10 +484,14 @@ def whatsapp_webhook() -> Response:
                 for msg in messages:
                     from_wa = msg.get("from")  # numéro MSISDN
                     msg_type = msg.get("type")
+                    print(f"🔔 Message de {from_wa}, type: {msg_type}")
+                    
                     utilisateur = contact_name or from_wa or "WhatsApp"
                     # Conversation state machine
                     _wa_handle_incoming_message(from_wa, utilisateur, msg)
                     response_count += 1
+                    print(f"🔔 Réponse envoyée à {from_wa}")
+                    
                     # Data extraction for passive recording (optional)
                     type_signalement = "WhatsApp"
                     message_text = None
@@ -507,8 +527,10 @@ def whatsapp_webhook() -> Response:
             write_json_snapshot(read_signalements_from_db())
         except Exception:
             pass
+        print(f"🔔 Résumé: {created_count} créés, {response_count} réponses")
         return jsonify({"status": "ok", "created": created_count, "responded": response_count})
     except Exception as e:
+        print(f"❌ Erreur WhatsApp webhook: {e}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
@@ -798,6 +820,169 @@ def debug_all_dbs() -> Response:
         "current_db_file": DB_FILE,
         "databases": results
     })
+
+
+#########################
+# WhatsApp Helpers/State #
+#########################
+
+# Etat en mémoire: { wa_number: {state: str, type: str|None, text: str|None, photo_id: str|None} }
+WA_SESSIONS: Dict[str, Dict[str, Any]] = {}
+
+def _wa_send_message(wa_to: str, text: str, buttons: list[dict] | None = None) -> None:
+    if not (WA_ACCESS_TOKEN and WA_PHONE_NUMBER_ID):
+        print(f"❌ WhatsApp config manquante: ACCESS_TOKEN={bool(WA_ACCESS_TOKEN)}, PHONE_ID={bool(WA_PHONE_NUMBER_ID)}")
+        return
+    url = f"https://graph.facebook.com/v20.0/{WA_PHONE_NUMBER_ID}/messages"
+    headers = {"Authorization": f"Bearer {WA_ACCESS_TOKEN}", "Content-Type": "application/json"}
+    data: Dict[str, Any] = {
+        "messaging_product": "whatsapp",
+        "to": wa_to,
+        "type": "text",
+        "text": {"body": text},
+    }
+    # Quick replies via interactive buttons
+    if buttons:
+        data = {
+            "messaging_product": "whatsapp",
+            "to": wa_to,
+            "type": "interactive",
+            "interactive": {
+                "type": "button",
+                "body": {"text": text[:1024]},
+                "action": {"buttons": buttons[:3]},
+            },
+        }
+    try:
+        print(f"📤 Envoi WhatsApp à {wa_to}: {text}")
+        response = requests.post(url, headers=headers, json=data, timeout=10)
+        print(f"📤 Réponse Meta: {response.status_code} - {response.text}")
+    except Exception as e:
+        print(f"❌ Erreur envoi WhatsApp: {e}")
+
+def _wa_quick_button(title: str, payload: str) -> dict:
+    return {"type": "reply", "reply": {"id": payload, "title": title[:20]}}
+
+def _wa_handle_incoming_message(wa_from: str, user_name: str, msg: Dict[str, Any]) -> None:
+    session = WA_SESSIONS.get(wa_from) or {"state": "NEW", "type": None, "text": None, "photo_id": None}
+    msg_type = msg.get("type")
+    text_body = (msg.get("text") or {}).get("body") if msg_type == "text" else None
+    interactive = msg.get("interactive")
+    button_reply_id = None
+    if interactive and interactive.get("type") == "button_reply":
+        button_reply_id = (interactive.get("button_reply") or {}).get("id")
+
+    state = session.get("state")
+    print(f"🤖 WhatsApp session {wa_from}: state={state}, msg_type={msg_type}, text={text_body}, button={button_reply_id}")
+
+    if state == "NEW":
+        # Start: propose type
+        session["state"] = "CHOIX"
+        WA_SESSIONS[wa_from] = session
+        _wa_send_message(
+            wa_from,
+            "Que souhaitez-vous signaler ?",
+            buttons=[
+                _wa_quick_button("📍 Dépôt", "TYPE_DEPOT"),
+                _wa_quick_button("🗑 Bac plein", "TYPE_BAC"),
+                _wa_quick_button("🔹 Autres", "TYPE_AUTRES"),
+            ],
+        )
+        return
+
+    if state == "CHOIX":
+        if button_reply_id in ("TYPE_DEPOT", "TYPE_BAC", "TYPE_AUTRES"):
+            session["type"] = {
+                "TYPE_DEPOT": "📍 Dépôt",
+                "TYPE_BAC": "🗑 Bac plein",
+                "TYPE_AUTRES": "🔹 Autres",
+            }[button_reply_id]
+            session["state"] = "TEXTE"
+            WA_SESSIONS[wa_from] = session
+            _wa_send_message(wa_from, "Merci. Veuillez préciser les détails du signalement.")
+        else:
+            _wa_send_message(wa_from, "Choisissez une option en appuyant sur un bouton.")
+        return
+
+    if state == "TEXTE":
+        if text_body:
+            session["text"] = text_body
+            session["state"] = "CHOIX_MEDIA"
+            WA_SESSIONS[wa_from] = session
+            _wa_send_message(
+                wa_from,
+                "Vous pouvez d'abord ajouter une photo, puis envoyer votre localisation.",
+                buttons=[
+                    _wa_quick_button("📷 Joindre une photo", "MEDIA_PHOTO"),
+                    _wa_quick_button("📍 Localisation", "MEDIA_LOC"),
+                ],
+            )
+        else:
+            _wa_send_message(wa_from, "Envoyez le texte du signalement.")
+        return
+
+    if state == "CHOIX_MEDIA":
+        # Handle button choice or incoming media/location
+        if button_reply_id == "MEDIA_PHOTO":
+            _wa_send_message(wa_from, "Envoyez une image (joignez une photo à ce chat).")
+            session["state"] = "ATTENTE_PHOTO"
+            WA_SESSIONS[wa_from] = session
+            return
+        if button_reply_id == "MEDIA_LOC":
+            _wa_send_message(wa_from, "Partagez votre localisation via WhatsApp.")
+            session["state"] = "ATTENTE_LOC"
+            WA_SESSIONS[wa_from] = session
+            return
+        if msg_type == "image":
+            image = msg.get("image") or {}
+            session["photo_id"] = image.get("id")
+            session["state"] = "ATTENTE_LOC"
+            WA_SESSIONS[wa_from] = session
+            _wa_send_message(wa_from, "✅ Photo ajoutée. Maintenant, envoyez votre localisation.")
+            return
+        if msg_type == "location":
+            loc = msg.get("location") or {}
+            _wa_finalize_report(wa_from, user_name, session, loc.get("latitude"), loc.get("longitude"))
+            return
+        _wa_send_message(wa_from, "Choisissez une option ou envoyez la photo/la localisation.")
+        return
+
+    if state in ("ATTENTE_PHOTO", "ATTENTE_LOC"):
+        if msg_type == "image":
+            image = msg.get("image") or {}
+            session["photo_id"] = image.get("id")
+            session["state"] = "ATTENTE_LOC"
+            WA_SESSIONS[wa_from] = session
+            _wa_send_message(wa_from, "✅ Photo ajoutée. Maintenant, envoyez votre localisation.")
+            return
+        if msg_type == "location":
+            loc = msg.get("location") or {}
+            _wa_finalize_report(wa_from, user_name, session, loc.get("latitude"), loc.get("longitude"))
+            return
+        _wa_send_message(wa_from, "Envoyez la photo ou la localisation.")
+        return
+
+def _wa_finalize_report(wa_from: str, user_name: str, session: Dict[str, Any], lat: Any, lon: Any) -> None:
+    try:
+        latitude = float(lat) if lat is not None else None
+        longitude = float(lon) if lon is not None else None
+    except Exception:
+        latitude = None
+        longitude = None
+    created = append_signalement_nullable(
+        utilisateur=user_name or wa_from,
+        type_signalement=session.get("type") or "WhatsApp",
+        message=session.get("text") or "",
+        latitude=latitude,
+        longitude=longitude,
+        photo_id=session.get("photo_id"),
+    )
+    try:
+        write_json_snapshot(read_signalements_from_db())
+    except Exception:
+        pass
+    WA_SESSIONS.pop(wa_from, None)
+    _wa_send_message(wa_from, "✅ Signalement complet enregistré !")
 
 
 if __name__ == "__main__":
