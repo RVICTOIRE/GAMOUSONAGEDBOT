@@ -514,7 +514,6 @@ def delete_multiple_signalements() -> Response:
                 "deleted_count": count,
                 "criteria": {
                     "date_heure": date_heure,
-                    "date_heure": date_heure,
                     "utilisateur": utilisateur,
                     "type": type_signalement
                 }

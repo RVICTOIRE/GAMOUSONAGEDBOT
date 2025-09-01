@@ -16,6 +16,10 @@
   input[type="text"] { width: 320px; padding: 6px; }
   button { padding: 6px 10px; cursor: pointer; }
   .muted { color: #999; }
+  .delete-btn { background: #ff4444; color: white; border: none; }
+  .delete-btn:hover { background: #cc0000; }
+  .delete-criteria-btn { background: #ff8800; color: white; border: none; }
+  .delete-criteria-btn:hover { background: #cc6600; }
 </style>
 </head>
 <body>
@@ -24,7 +28,11 @@
     <label>Clé admin: <input id="token" type="text" placeholder="Coller ADMIN_TOKEN ici" /></label>
     <button onclick="loadData()">Rafraîchir</button>
   </div>
-  <div class="hint">Cette page lit le <strong>fichier JSON</strong> comme la carte et le tableau de bord. La suppression n'est possible que pour les entrées ayant un <strong>ID</strong> en base.</div>
+  <div class="hint">
+    Cette page lit le <strong>fichier JSON</strong> comme la carte et le tableau de bord. 
+    <br>• <strong>Suppression par ID</strong> : Pour les entrées avec ID en base (bouton rouge)
+    <br>• <strong>Suppression par critères</strong> : Pour toutes les entrées (bouton orange)
+  </div>
   <table>
     <thead>
       <tr>
@@ -56,7 +64,7 @@
         tbody.innerHTML = '<tr><td colspan="8">Aucun signalement</td></tr>';
         return;
       }
-      tbody.innerHTML = data.map(item => {
+      tbody.innerHTML = data.map((item, index) => {
         const id = item.id;
         const date = item['Date/Heure'] || '';
         const user = item['Utilisateur'] || '';
@@ -64,12 +72,21 @@
         const msg = item['Message'] || '';
         const lat = item['Latitude'] ?? '';
         const lng = item['Longitude'] ?? '';
-        const canDelete = !!id;
-        const actionCell = canDelete
-          ? `<button onclick="del(${id})">Supprimer</button>`
-          : `<span class="muted">Non supprimable (pas d'ID)</span>`;
+        
+        // Bouton de suppression par ID (si disponible)
+        const deleteByIdBtn = id 
+          ? `<button class="delete-btn" onclick="delById(${id})">Supprimer par ID</button>`
+          : '';
+        
+        // Bouton de suppression par critères (toujours disponible)
+        const deleteByCriteriaBtn = `<button class="delete-criteria-btn" onclick="delByCriteria('${escapeHtml(date)}', '${escapeHtml(user)}', '${escapeHtml(type)}', '${escapeHtml(msg)}')">Supprimer par critères</button>`;
+        
+        const actionCell = deleteByIdBtn 
+          ? `${deleteByIdBtn}<br>${deleteByCriteriaBtn}`
+          : deleteByCriteriaBtn;
+        
         return `<tr>
-          <td>${id ?? ''}</td>
+          <td>${id ?? '<span class="muted">Pas d\'ID</span>'}</td>
           <td>${escapeHtml(date)}</td>
           <td>${escapeHtml(user)}</td>
           <td>${escapeHtml(type)}</td>
@@ -81,19 +98,66 @@
       }).join('');
     }
 
-    async function del(id) {
+    async function delById(id) {
       const token = document.getElementById('token').value.trim();
-      if (!confirm(`Supprimer le signalement ${id} ?`)) return;
-      const res = await fetch(`/api/signalements/${id}?token=${encodeURIComponent(token)}`, { method: 'DELETE' });
-      if (!res.ok) {
-        alert('Suppression échouée - vérifiez la clé admin');
-        return;
+      if (!confirm(`Supprimer le signalement avec ID ${id} ?`)) return;
+      
+      try {
+        const res = await fetch(`/api/signalements/${id}?token=${encodeURIComponent(token)}`, { method: 'DELETE' });
+        if (!res.ok) {
+          const error = await res.json();
+          alert(`Suppression échouée: ${error.message || 'Erreur inconnue'}`);
+          return;
+        }
+        const result = await res.json();
+        alert(`✅ ${result.message}`);
+        await loadData();
+      } catch (error) {
+        alert(`Erreur: ${error.message}`);
       }
-      await loadData();
+    }
+
+    async function delByCriteria(date, user, type, message) {
+      const token = document.getElementById('token').value.trim();
+      
+      // Construire le message de confirmation
+      const criteria = [];
+      if (date) criteria.push(`Date: ${date}`);
+      if (user) criteria.push(`Utilisateur: ${user}`);
+      if (type) criteria.push(`Type: ${type}`);
+      if (message) criteria.push(`Message: ${message}`);
+      
+      if (!confirm(`Supprimer le signalement avec ces critères ?\n\n${criteria.join('\n')}`)) return;
+      
+      try {
+        const payload = {};
+        if (date) payload.date_heure = date;
+        if (user) payload.utilisateur = user;
+        if (type) payload.type = type;
+        if (message) payload.message = message;
+        
+        const res = await fetch(`/api/signalements/delete?token=${encodeURIComponent(token)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        
+        if (!res.ok) {
+          const error = await res.json();
+          alert(`Suppression échouée: ${error.message || 'Erreur inconnue'}`);
+          return;
+        }
+        
+        const result = await res.json();
+        alert(`✅ ${result.message}`);
+        await loadData();
+      } catch (error) {
+        alert(`Erreur: ${error.message}`);
+      }
     }
 
     function escapeHtml(str) {
-      return String(str).replace(/[&<>"]+/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[s]));
+      return String(str).replace(/[&<>"']+/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
     }
 
     loadData();
