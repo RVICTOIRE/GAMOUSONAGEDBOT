@@ -19,8 +19,8 @@ load_dotenv('config.env')
 
 # ==== CONSTANTES ====
 # Rendre le chemin de la base configurable pour la production (ex: Railway Volume /app/data/signalements.db)
-DB_FILE = os.getenv("DB_FILE", "./signalements.db")  # Même DB que le bot
-JSON_FILE = os.getenv("JSON_FILE", "./signalements.json")  # Même chemin que le bot
+DB_FILE = os.getenv("DB_FILE", "/app/data/signalements.db")  # Volume persistant Railway
+JSON_FILE = os.getenv("JSON_FILE", "/app/data/signalements.json")  # Volume persistant Railway
 
 # WhatsApp Cloud API (Meta)
 WA_VERIFY_TOKEN = os.getenv("WA_VERIFY_TOKEN")  # pour la vérification du webhook
@@ -381,7 +381,7 @@ def refresh_json() -> Response:
 
 @app.delete("/api/signalements/<int:signalement_id>")
 def delete_signalement(signalement_id: int) -> Response:
-    """Supprime un signalement et régénère le JSON"""
+    """Supprime un signalement par ID et régénère le JSON"""
     if not require_admin():
         return jsonify({"status": "forbidden"}), 403
     try:
@@ -394,6 +394,131 @@ def delete_signalement(signalement_id: int) -> Response:
             signalements = read_signalements_from_db()
             write_json_snapshot(signalements)
             return jsonify({"status": "ok", "message": "Signalement supprimé et JSON mis à jour"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/signalements/delete")
+def delete_signalement_by_criteria() -> Response:
+    """Supprime un signalement par critères (date, utilisateur, message) et régénère le JSON"""
+    if not require_admin():
+        return jsonify({"status": "forbidden"}), 403
+    
+    payload = request.get_json(silent=True) or {}
+    date_heure = payload.get("date_heure")
+    utilisateur = payload.get("utilisateur")
+    message = payload.get("message")
+    type_signalement = payload.get("type")
+    
+    if not any([date_heure, utilisateur, message, type_signalement]):
+        return jsonify({"status": "error", "message": "Au moins un critère requis (date_heure, utilisateur, message, type)"}), 400
+    
+    try:
+        # Construire la requête dynamiquement
+        conditions = []
+        params = []
+        
+        if date_heure:
+            conditions.append("date_heure = ?")
+            params.append(date_heure)
+        if utilisateur:
+            conditions.append("utilisateur = ?")
+            params.append(utilisateur)
+        if message:
+            conditions.append("message = ?")
+            params.append(message)
+        if type_signalement:
+            conditions.append("type = ?")
+            params.append(type_signalement)
+        
+        where_clause = " AND ".join(conditions)
+        
+        with get_db_connection() as conn:
+            # Vérifier si le signalement existe
+            cursor = conn.execute(f"SELECT id FROM signalements WHERE {where_clause}", params)
+            if not cursor.fetchone():
+                return jsonify({"status": "error", "message": "Signalement non trouvé"}), 404
+            
+            # Supprimer le signalement
+            conn.execute(f"DELETE FROM signalements WHERE {where_clause}", params)
+            conn.commit()
+            
+            # Régénérer le JSON
+            signalements = read_signalements_from_db()
+            write_json_snapshot(signalements)
+            
+            return jsonify({
+                "status": "ok", 
+                "message": "Signalement supprimé et JSON mis à jour",
+                "criteria": {
+                    "date_heure": date_heure,
+                    "utilisateur": utilisateur,
+                    "message": message,
+                    "type": type_signalement
+                }
+            })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.post("/api/signalements/delete-multiple")
+def delete_multiple_signalements() -> Response:
+    """Supprime plusieurs signalements par critères et régénère le JSON"""
+    if not require_admin():
+        return jsonify({"status": "forbidden"}), 403
+    
+    payload = request.get_json(silent=True) or {}
+    date_heure = payload.get("date_heure")
+    utilisateur = payload.get("utilisateur")
+    type_signalement = payload.get("type")
+    
+    if not any([date_heure, utilisateur, type_signalement]):
+        return jsonify({"status": "error", "message": "Au moins un critère requis (date_heure, utilisateur, type)"}), 400
+    
+    try:
+        # Construire la requête dynamiquement
+        conditions = []
+        params = []
+        
+        if date_heure:
+            conditions.append("date_heure = ?")
+            params.append(date_heure)
+        if utilisateur:
+            conditions.append("utilisateur = ?")
+            params.append(utilisateur)
+        if type_signalement:
+            conditions.append("type = ?")
+            params.append(type_signalement)
+        
+        where_clause = " AND ".join(conditions)
+        
+        with get_db_connection() as conn:
+            # Compter les signalements à supprimer
+            cursor = conn.execute(f"SELECT COUNT(*) FROM signalements WHERE {where_clause}", params)
+            count = cursor.fetchone()[0]
+            
+            if count == 0:
+                return jsonify({"status": "error", "message": "Aucun signalement trouvé"}), 404
+            
+            # Supprimer les signalements
+            conn.execute(f"DELETE FROM signalements WHERE {where_clause}", params)
+            conn.commit()
+            
+            # Régénérer le JSON
+            signalements = read_signalements_from_db()
+            write_json_snapshot(signalements)
+            
+            return jsonify({
+                "status": "ok", 
+                "message": f"{count} signalement(s) supprimé(s) et JSON mis à jour",
+                "deleted_count": count,
+                "criteria": {
+                    "date_heure": date_heure,
+                    "date_heure": date_heure,
+                    "utilisateur": utilisateur,
+                    "type": type_signalement
+                }
+            })
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
