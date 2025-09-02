@@ -1,8 +1,8 @@
-﻿{
-  "": "https://railway.app/railway.schema.json",
+{
+  "$schema": "https://railway.app/railway.schema.json",
   "build": { "builder": "NIXPACKS" },
   "deploy": {
-    "startCommand": "gunicorn wsgi:app --bind 0.0.0.0:",
+    "startCommand": "gunicorn wsgi:app --bind 0.0.0.0:$PORT",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 15,
     "restartPolicyType": "ON_FAILURE",
