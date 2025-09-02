@@ -19,8 +19,8 @@ load_dotenv('config.env')
 
 # ==== CONSTANTES ====
 # Rendre le chemin de la base configurable pour la production (ex: Railway Volume /app/data/signalements.db)
-DB_FILE = os.getenv("DB_FILE", "/app/data/signalements.db")  # Volume persistant Railway
-JSON_FILE = os.getenv("JSON_FILE", "/app/data/signalements.json")  # Volume persistant Railway
+DB_FILE = os.getenv("DB_FILE", "./signalements.db")  # Retour au chemin local
+JSON_FILE = os.getenv("JSON_FILE", "./signalements.json")  # Retour au chemin local
 
 # WhatsApp Cloud API (Meta)
 WA_VERIFY_TOKEN = os.getenv("WA_VERIFY_TOKEN")  # pour la vérification du webhook
